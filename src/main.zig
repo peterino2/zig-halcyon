@@ -1,145 +1,20 @@
 //
 const std = @import("std");
+
+const nodes = @import("nodes/node_ecs.zig");
+
 const ArrayList = std.ArrayList;
 const AutoHashMap = std.AutoHashMap;
+const StringHashMap = std.StringHashMap;
 const Allocator = std.mem.Allocator;
 
-// Aliases
+const Node = nodes.Node;
+const NodeType = nodes.NodeType;
+const HalcNodesECS = nodes.HalcNodesECS;
 
-// These nodes are how the true runtime works underneath the hood.
-// These nodes will be grouped different in the visual editor.
-
-// The Text based editor won't have a concept of nodes, but rather is based on scopes
-// Instead
-
-const Node = u32;
-const NodeString = ArrayList(u8);
-const NodeStringView = []const u8;
-
-const NodeType = enum(u8) {
-    Dead, // set to this to effectively mark this node as dead
-    Text,
-    Response,
-};
-
-// master entities
-const NodeEntities = struct {
-    instances: ArrayList(NodeString),
-    nodeTypes: ArrayList(NodeType),
-
-    const Self = @This();
-
-    // memory management interface
-    pub fn init(allocator: std.mem.Allocator) Self {
-        return .{
-            .instances = ArrayList(NodeString).init(allocator),
-            .nodeTypes = ArrayList(NodeType).init(allocator),
-        };
-    }
-
-    pub fn deinit(self: *Self) void {
-        for (self.instances.items) |instance| {
-            instance.deinit();
-        }
-        self.instances.deinit();
-        self.nodeTypes.deinit();
-    }
-
-    // management interface
-    pub fn newEntity(self: *Self, allocator: std.mem.Allocator) !Node {
-        try self.instances.append(ArrayList(u8).init(allocator));
-        try self.nodeTypes.append(NodeType.Text);
-
-        std.debug.assert(self.instances.items.len > 0);
-        return @intCast(u32, self.instances.items.len - 1);
-    }
-
-    pub fn newEntityFromPlainText(self: *Self, allocator: std.mem.Allocator, string: NodeStringView) !Node {
-        const id = @intCast(u32, try self.newEntity(allocator));
-        try self.instances.items[id].appendSlice(string);
-        return id;
-    }
-
-    // direct access to node type
-    pub fn setNodeType(self: *Self, node: Node, newType: NodeType) void {
-        if (node < self.instances.items.len) {
-            self.nodeTypes.items[node] = newType;
-        }
-    }
-};
-
-const SpeakerNames = struct {
-    instances: AutoHashMap(Node, NodeString),
-    const Self = @This();
-
-    // memory management interface
-    pub fn init(allocator: std.mem.Allocator) Self {
-        return .{
-            .instances = AutoHashMap(Node, NodeString).init(allocator),
-        };
-    }
-
-    pub fn deinit(self: *Self) void {
-        var iter = self.instances.iterator();
-        while (iter.next()) |instance| {
-            instance.value_ptr.deinit();
-        }
-
-        self.instances.deinit();
-    }
-
-    pub fn setSpeakerName(self: *Self, allocator: std.mem.Allocator, node: Node, newString: NodeStringView) !void {
-        var result = (try self.instances.getOrPut(node));
-
-        if (!result.found_existing) {
-            result.value_ptr.* = NodeString.init(allocator);
-        }
-
-        var instance = result.value_ptr;
-        instance.resize(newString.len) catch unreachable;
-        const range = instance.items[0..instance.items.len];
-        try instance.replaceRange(0, instance.items.len, newString);
-        _ = range;
-    }
-};
-
-const Choices = struct {
-    instances: AutoHashMap(u32, []const u32),
-    const Self = @This();
-
-    // memory management interface
-    pub fn init(allocator: std.mem.Allocator) Self {
-        return .{
-            .instances = AutoHashMap(u32, []const u32).init(allocator),
-        };
-    }
-
-    pub fn deinit(self: *Self) void {
-        self.instances.deinit();
-    }
-};
-
-const NextNode = struct {
-    instances: AutoHashMap(Node, Node),
-    const Self = @This();
-
-    pub fn init(allocator: std.mem.Allocator) Self {
-        return .{
-            .instances = AutoHashMap(Node, Node).init(allocator),
-        };
-    }
-
-    pub fn deinit(self: *Self) void {
-        self.instances.deinit();
-    }
-
-    pub fn setNextNode(self: *Self, from: Node, to: Node) !void {
-        try self.instances.put(from, to);
-    }
-};
-
+const Interactor = u32;
 const HalcInteractor = struct {
-    ecs: *HalcECS,
+    ecs: *HalcNodesECS,
     currentNode: Node,
     isInteracting: bool,
 
@@ -182,34 +57,13 @@ const HalcInteractor = struct {
     }
 };
 
-const HalcECS = struct {
-    entities: NodeEntities,
-    speakerNameComponents: SpeakerNames,
-    choicesComponents: Choices,
-    nextNodeComponents: NextNode,
-
-    const Self = @This();
-
-    // management interface
-    pub fn init(allocator: std.mem.Allocator) Self {
-        return .{
-            .entities = NodeEntities.init(allocator),
-            .speakerNameComponents = SpeakerNames.init(allocator),
-            .choicesComponents = Choices.init(allocator),
-            .nextNodeComponents = NextNode.init(allocator),
-        };
-    }
-
-    pub fn deinit(self: *Self) void {
-        self.entities.deinit();
-        self.speakerNameComponents.deinit();
-        self.choicesComponents.deinit();
-        self.nextNodeComponents.deinit();
-    }
+const HalcInteractorsECS = struct {
+    interactors: ArrayList(HalcInteractor),
+    names: StringHashMap(u32), 
 };
 
-fn test_simple_branching_story(allocator: std.mem.Allocator) !HalcECS {
-    var ecs = HalcECS.init(allocator);
+fn make_simple_branching_story(allocator: std.mem.Allocator) !HalcNodesECS {
+    var ecs = HalcNodesECS.init(allocator);
 
     // create the base content for the
     var n = try ecs.entities.newEntityFromPlainText(allocator, "Hello I am the narrator."); // 0
@@ -252,7 +106,7 @@ test "simple branching story" {
     const stdin = std.io.getStdIn().reader();
     var allocator = std.testing.allocator;
 
-    var ecs = try test_simple_branching_story(allocator);
+    var ecs = try make_simple_branching_story(allocator);
     defer ecs.deinit();
 
     // test allocation and cleanup of entities
