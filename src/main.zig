@@ -12,6 +12,12 @@ const Node = nodes.Node;
 const NodeType = nodes.NodeType;
 const HalcNodesECS = nodes.HalcNodesECS;
 
+pub const HalcINteractorState = enum(u8)
+{
+    InDialogue,
+    FinishedDialogue,
+};
+
 const Interactor = u32;
 const HalcInteractor = struct {
     ecs: *HalcNodesECS,
@@ -20,13 +26,22 @@ const HalcInteractor = struct {
 
     const Self = @This();
 
+    pub fn isEndOfDialogue(self: Self)  bool {
+        if(self.ecs.nextNodeComponents.instances.get(self.currentNode)) {
+            return false;
+        } else {
+            return true;
+        }
+    }
+
+    // If there is no nextNode in the ecs. Then this will end the interaction
     pub fn nextNode(self: *Self) void {
         if (self.ecs.nextNodeComponents.instances.get(self.currentNode)) |n| {
             self.currentNode = n;
         } else {
             self.isInteracting = false;
+            self.finishedInteraction = true;
         }
-        _ = self;
     }
 
     pub fn choose(self: *Self, choice: u32) void {
@@ -113,7 +128,7 @@ test "simple branching story" {
     for (ecs.entities.instances.items) |entityText, i| {
         const speaker = ecs.speakerNameComponents.instances.get(@intCast(u32, i));
         var speakerName = if (speaker) |s| s.items else "default";
-        try stdout.print("\n {s} id {d} : {s}", .{ speakerName, i, entityText.items });
+        try stdout.print("\n{s} id {d} : {s}", .{ speakerName, i, entityText.items });
     }
 
     // test an interactor

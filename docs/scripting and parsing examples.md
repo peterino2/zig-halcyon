@@ -33,11 +33,11 @@ QuestDefinition: {
 // or to have a master vars.halc file that defines top level variables
 
 `vars{ // the vars codeblock is only used for importing and defining variables
-    g.GameLevelVariable :bool = true;   // these are persistent across multiple interactors and are shared between all players
-    p.PlayerLevelVariable :bool = true; // the p. namespace is persistent for a specific player
-    i.InteractionLevelVariable :bool = true; // the i. namespace is for variables that exist for the lifetime of one Interactor Only
+    def g.GameLevelVariable :bool = true;           // these are persistent across multiple interactors and are shared between all players
+    def p.PlayerLevelVariable :bool = true;         // the p. namespace is persistent for a specific player
+    def i.InteractionLevelVariable :bool = true;    // the i. namespace is for variables that exist for the lifetime of one Interactor Only
 
-    import g.SomeImportedVariable: bool;       // this is a variable that this script is expecting to be defined somewhere else.
+    import g.SomeImportedVariable: bool;            // this is a variable that this script is expecting to be defined somewhere else.
     import g.SomeImportedVariableWithDefault;
 }
 

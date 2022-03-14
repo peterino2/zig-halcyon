@@ -1,7 +1,7 @@
 const std = @import("std");
 
 const node_entities = @import("node.zig");
-const node_choices = @import("node_choices.zig");
+const node_choices = @import("node_links.zig");
 const node_characters = @import("node_characters.zig");
 
 const ArrayList = std.ArrayList;
