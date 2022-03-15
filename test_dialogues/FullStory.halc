@@ -19,12 +19,22 @@
     // any number of these facts could be active at any given time.
     // if no facts are present then the quest will have nothing that appears.
     // this is for like a very freeform quest style.
+
+    // the quest state is the main tagline that shows what the current objective is in a traditional quest system.
+    // feel free
     questStates: {
-        "undiscovered" : {},
+        "undiscovered" : {
+        },
         "looking_for_gerard" : {},
         "grace_is_lying" :{},
         "nankos_abduction" :{},
-        "good_ending"
+        "gerard_is_lying" :{},
+        "help_gerard" :{},
+        "save_grace_or_nanko": {}
+        // endings
+        "nanko_is_indicted": {}
+        "grace_is_indicted": {}
+        "gerard_absconds": {}
     }
 
     factsEvaluator: {
@@ -67,14 +77,13 @@
     };
 }
 
-
 [hello]
-@if(personA.isPissedOff)
-PersonA: Can you fucking get away from me?
+@if(PersonA.rapport > 50)
+PersonA: Can you fuck off?
 @else
 PersonA: Hello!
     > I hate you:
-        @setVar(personA.isPissedOff = true)
+        @setVar(PersonA.isPissed = true)
         PersonA: Well fuck you bud.
     > Hello:
         @goto hello
@@ -100,7 +109,7 @@ PersonA: Hello!
             $: Her droop sadly.
             Grace: I- I- don't know what I saw. I can tell you but... it's complicated.
 
-[talk_to_grace; @requires(g.canParticiate(Dean))]
+[dean_talk_to_grace; @requires(g.canParticiate(Dean))]
     // the c namespace is also global but specifically exists for that one character.
     $: @var(c.grace.displayName) starts to get visibly uncomfortable as Dean leans in.
     Grace: c-can you stop leaning in so close to me? I'm just trying to eat here.
