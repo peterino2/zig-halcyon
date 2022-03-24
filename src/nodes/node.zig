@@ -59,7 +59,4 @@ pub const NodeEntities = struct {
             self.nodeTypes.items[node] = newType;
         }
     }
-
-    // and this is where I'd put my helpers.
-    // for the most part I think I'll refrain from using too many helpers during early engineering.
 };
