@@ -78,12 +78,12 @@
 }
 
 [hello]
-@if(PersonA.rapport > 50)
+@if(PersonA.isPissedOff)
 PersonA: Can you fuck off?
 @else
 PersonA: Hello!
     > I hate you:
-        @setVar(PersonA.isPissed = true)
+        @setVar(PersonA.isPissedOff = true)
         PersonA: Well fuck you bud.
     > Hello:
         @goto hello
@@ -135,26 +135,44 @@ PersonA: Hello!
 [grace_explanation]
     Grace: It all started a few days ago. The nobleman came to town and checked in at this inn. He arrived in a
     the middle of a storm and was desperate for a place to stay.
+
     @sendEven(start cutscene stormy night arrival)
+
     @waitForEvent(end cutscene stormy night arrival)
+
     Grace: after that he went into his room in the back.
+
     Grace: The next morning we heard nothing from his room so I started to go down the hall to knock on his door.
+
     Grace: But when I opened the door... A slithering horrible black mass was in the entire room. It reached out towards me and I 
     screamed and slammed the door shut. 
+
     Grace: A while later A few of the other men knocked down the door, the room was covered in blood and it stank. But the writing mass.. it was gone.
     It's been a week now and we've mostly cleaned up the room.
+
     @if(p.canParticiate(Drask))
+
         Drask: That sounds like dark fae magic to me
+
         @if(p.canParticiate(Kaito))
+
             Kaito: When is it NOT dark fae magic with you?
+
             Drask: Those fae are are deceptive... dangerous.
+
     Grace: There's something else you should know... 
+
     Grace: I saw Gerard coming from down the hall. 
+
     Grace: But there's only one room around the corner, that one.
+
     @if(p.canParticiate(Kaito))
         Kaito: So that means.. Gerard must've come from that room?
+
     Grace: No doubt about it there's nothing else down that way.
+
     Grace: And since then. We haven't been able to find him.
+
     @questUpdateFacts(
         q1.knowledge.Gerard.seenLeavingTheRoom = true;
         q1.knowledge.Gerard.isMissing = true;
