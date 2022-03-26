@@ -2,31 +2,60 @@ const std = @import("std");
 const ArrayList = std.ArrayList;
 const AutoHashMap = std.AutoHashMap;
 
-pub const easySampleData = 
+pub const simplest_v1 =
     \\[hello]
+    \\$: Hello!
+    \\$: I'm going to ask you a question.
+    \\: do you like cats or dogs?
+    \\> Cats:
+    \\    $: Hmm I guess we can't be friends
+    \\> Dogs:
+    \\    $: Nice!
+    \\    Lee: Yeah man they're delicious
+    \\> Both:
+    \\    $: Don't be stupid you have to pick one.
+    \\    @goto hello
+    \\$: you walk away in disgust
+    \\@end
+;
+
+pub const easySampleData = 
+    \\@vars(
+    \\  gold = 50
+    \\)
+    \\[hello]
+    \\# this a seperated comment
     \\@if(PersonA.isPissedOff)
-    \\PersonA: Can you fuck off?
+    \\PersonA: Can you fuck off? # this is an inline comment
     \\@else
     \\PersonA: Hello!
     \\    > I hate you:
-    \\        @setVar(PersonA.isPissedOff = true)
+    \\        @set(PersonA.isPissedOff = true)
     \\        PersonA: Well fuck you bud.
     \\    > Hello:
     \\        @goto hello
+    \\    @requires({goldCost} gold)
+    \\    > Have some gold:
+    \\        $: He takes it from you
+    \\        @set(gold -= 50)
+    \\        PersonA: Ugh.. fine.. i am no longer pissed off at you.
+    \\        @set(PersonA.isPissedOff = false)
+    \\        @set(PersonA.hasYourGold = true)
 ;
 
 pub const sampleData = 
+    \\# this is testing the comments at the start
     \\[hello]
     \\@if(PersonA.isPissedOff)
-    \\PersonA: Can you fuck off?
+    \\PersonA: Can you fuck off? # testing comment inline
     \\@else
     \\PersonA: Hello!
     \\    > I hate you:
-    \\        @setVar(PersonA.isPissedOff = true)
+    \\        @set(PersonA.isPissedOff = true)
     \\        PersonA: Well fuck you bud.
     \\    > Hello:
     \\        @goto hello
-    \\
+    \\# you can add comments with #
     \\[talk_to_grace; @once(grace)]
     \\    $: She's hunched over her meal, barely making any effort to eat.
     \\    Grace: Huh?... Oh I'm sorry I didn't quite see you there.
@@ -36,7 +65,9 @@ pub const sampleData =
     \\            @todo
     \\        > Hear any interesting rumors?
     \\            $: She sheepishly avoids your eye contact and resumes forking through her plate.
-    \\            Grace: Sorry... I don't really have any rumors. I'm just trying to eat here ok?
+    \\            Grace: Sorry... I don't really have any rumors. 
+    \\            : I'm just trying to eat here ok? # you can multiline text with ':' this will append it onto the previous line
+    \\            # there are no multiline comments.
     \\            @goto talk_to_grace_eating
     \\        @if( p.canParticiate(Dean) and p.party.contains(Dean) )
     \\        Dean > I can tell whenever a beautiful woman is in distress! Tell me fair lady, what distresses your beautiful heart so?
@@ -68,9 +99,17 @@ pub const TokenStream = struct{
         "<",
         "{",
         "}",
+        "#",
+        ";",
     };
 
     const LeaveTextModeTokens: []const []const u8 = &.{
+        "\n",
+        "\n\r", // 1 = r_square_brack
+        "#",
+    };
+
+    const LeaveCommentModeTokens: []const []const u8 = &.{
         "\n",
         "\n\r", // 1 = r_square_brack
     };
@@ -94,10 +133,13 @@ pub const TokenStream = struct{
         L_ANGLE,
         L_BRACE,
         R_BRACE,
+        HASHTAG,
+        SEMICOLON,
         ENUM_COUNT,
         // other token types
         LABEL,
         STORY_TEXT,
+        COMMENT,
     };
 
 
@@ -118,7 +160,7 @@ pub const TokenStream = struct{
         const ParserMode = enum {
             default, // parses labels and one-offs
             text,
-            // comments,
+            comments,
         };
 
         var isTokenizing = true;
@@ -131,24 +173,31 @@ pub const TokenStream = struct{
 
         var mode = ParserMode.default;
 
-
         var collectingIdentifier = false;
 
         while(isTokenizing)
         {
-            const slice: []const u8 = targetData[startIndex.. startIndex + length - 1];
-            const latestChar = targetData[startIndex + length - 1];
+            const slice: []const u8 = targetData[startIndex.. startIndex + length];
+            const latestChar = slice[slice.len - 1];
+
+            var shouldBreak = false;
             switch(mode)
             {
                 .default => {
-                    var shouldBreak = false;
                     if(collectingIdentifier)
                     {
                         if(!(std.ascii.isAlNum(latestChar) or latestChar == '_') or latestChar == '.' or finalRun )
                         {
-                            try tokens.append(slice);
-                            try token_types.append(TokenType.LABEL);
-                            startIndex = startIndex + length - 1;
+                            if(!finalRun)
+                            {
+                                try tokens.append(slice[0..slice.len-1]);
+                                try token_types.append(TokenType.LABEL);
+                            }
+                            else if(finalRun) {
+                                try tokens.append(targetData[startIndex..]);
+                                try token_types.append(TokenType.LABEL);
+                            }
+                            startIndex = startIndex + length-1;
                             length = 0;
                             mode = ParserMode.default;
                             shouldBreak = true;
@@ -156,7 +205,17 @@ pub const TokenStream = struct{
                         }
                     }
 
-                    if(latestChar == ':')
+                    if(!shouldBreak and latestChar == '#')
+                    {
+                        try tokens.append("#");
+                        try token_types.append(TokenType.HASHTAG);
+                        startIndex = startIndex + length;
+                        length = 0;
+                        mode = ParserMode.comments;
+                        shouldBreak = true;
+                    }
+
+                    if(!shouldBreak and latestChar == ':')
                     {
                         try tokens.append(":");
                         try token_types.append(TokenType.COLON);
@@ -166,7 +225,7 @@ pub const TokenStream = struct{
                         shouldBreak = true;
                     }
 
-                    if( latestChar == '>')
+                    if(!shouldBreak and latestChar == '>')
                     {
                         try tokens.append(">");
                         try token_types.append(TokenType.R_ANGLE);
@@ -181,14 +240,14 @@ pub const TokenStream = struct{
                         {
                             try tokens.append(slice);
                             try token_types.append(@intToEnum(TokenType, i));
-                            startIndex = startIndex + length - 1;
+                            startIndex = startIndex + length;
                             length = 0;
                             mode = ParserMode.default;
                             shouldBreak = true;
                         }
                     }
 
-                    if(!shouldBreak and !collectingIdentifier)
+                    if(!collectingIdentifier)
                     {
                         if(std.ascii.isAlNum(latestChar) or latestChar == '_')
                         {
@@ -203,19 +262,19 @@ pub const TokenStream = struct{
                     }
                 },
                 .text => {
-                    var shouldBreak = false;
+
                     inline for(LeaveTextModeTokens) |tok| {
                         if(!shouldBreak and (std.mem.endsWith(u8, slice, tok) or finalRun ))
                         {
                             if(finalRun)
                             {
-
                                 try tokens.append(targetData[startIndex..]);
+                                try token_types.append(TokenType.STORY_TEXT);
                             }
                             else {
                                 try tokens.append(slice[0..slice.len - 1]);
+                                try token_types.append(TokenType.STORY_TEXT);
                             }
-                            try token_types.append(TokenType.STORY_TEXT);
                             startIndex = startIndex + length;
                             length = 0;
                             mode = ParserMode.default;
@@ -223,6 +282,39 @@ pub const TokenStream = struct{
                         }
                     }
 
+                    if(shouldBreak)
+                    {
+                        if(std.mem.endsWith(u8, slice , "#"))
+                        {
+                            mode = ParserMode.comments;
+                        }else {
+                            try tokens.append("\n");
+                            try token_types.append(TokenType.NEWLINE);
+                        }
+                        if(std.mem.endsWith(u8, slice , "\r"))
+                        {
+                            // std.debug.assert(false, "File is encoded with carraige return. The standard is linefeed (\n) only as the linebreak");
+                        }
+                    }
+                },
+                .comments => {
+                    inline for(LeaveTextModeTokens) |tok| {
+                        if(!shouldBreak and (std.mem.endsWith(u8, slice, tok) or finalRun ))
+                        {
+                            if(finalRun)
+                            {
+                                try tokens.append(targetData[startIndex..]);
+                            }
+                            else {
+                                try tokens.append(slice[0..slice.len - 1]);
+                            }
+                            try token_types.append(TokenType.COMMENT);
+                            startIndex = startIndex + length - 1;
+                            length = 0;
+                            mode = ParserMode.default;
+                            shouldBreak = true;
+                        }
+                    }
                 }
             }
 
@@ -255,6 +347,7 @@ test "Tokenizing test" {
     var stream = try TokenStream.MakeTokens(sampleData, std.testing.allocator);
     defer stream.deinit();
 
+    stream.test_display();
     // skipping the ast stage will make things easier but could possibly make things more difficult later..
     // ehh fuck it.
 }

@@ -124,6 +124,7 @@ test "simple branching story" {
     var ecs = try make_simple_branching_story(allocator);
     defer ecs.deinit();
 
+
     // test allocation and cleanup of entities
     for (ecs.entities.instances.items) |entityText, i| {
         const speaker = ecs.speakerNameComponents.instances.get(@intCast(u32, i));
