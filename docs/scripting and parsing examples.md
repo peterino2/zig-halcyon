@@ -1,6 +1,29 @@
+## Timeline
+
+- v0.0.1 Parser and basic story nodes generation
+    - generate nodes off of the parser simple example
+        - nodes
+        - basic links
+        - choices
+- v0.0.2 variables and scripting
+    - vars
+    - @set and @vars
+    - conditionals
+- v0.0.3 Unreal engine API and plugin
+    - basic compilation
+    - interactor and request API
+    - event pump
+        - engine tick
+- v0.0.4 Imgui/Vulkan C++ node inspector
+    - runtime embed into C++ vulkan imgui project
+    - automatically display nodes and allow creation of
+    - bound .graphproject files
+- v0.0.5 debugger interface
+    - sockets
+
 ## Quest example
 
-Quest states description. describing the data via json format
+Quest states description. describing the data via json format, lots of changes 
 
 ```
 
@@ -72,7 +95,6 @@ $$: Do you like cats or dogs?
         property1 = something,
         property2 = somethingElse,
     }
-
 
 ```
 

@@ -21,12 +21,13 @@ pub const simplest_v1 =
 
 pub const easySampleData = 
     \\@vars(
-    \\  gold = 50
+    \\  gold = 50,
+    \\  PersonA.isPissedOff = false,
     \\)
     \\[hello]
     \\# this a seperated comment
     \\@if(PersonA.isPissedOff)
-    \\PersonA: Can you fuck off? # this is an inline comment
+    \\PersonA: Can you fuck off?
     \\@else
     \\PersonA: Hello!
     \\    > I hate you:
@@ -34,13 +35,11 @@ pub const easySampleData =
     \\        PersonA: Well fuck you bud.
     \\    > Hello:
     \\        @goto hello
-    \\    @requires({goldCost} gold)
     \\    > Have some gold:
     \\        $: He takes it from you
     \\        @set(gold -= 50)
-    \\        PersonA: Ugh.. fine.. i am no longer pissed off at you.
     \\        @set(PersonA.isPissedOff = false)
-    \\        @set(PersonA.hasYourGold = true)
+    \\        PersonA: Ugh.. fine.. i am no longer pissed off at you.
 ;
 
 pub const sampleData = 
@@ -100,6 +99,9 @@ pub const TokenStream = struct{
         "{",
         "}",
         "#",
+        "+",
+        "-",
+        ",",
         ";",
     };
 
@@ -134,7 +136,10 @@ pub const TokenStream = struct{
         L_BRACE,
         R_BRACE,
         HASHTAG,
+        PLUS,
+        MINUS,
         SEMICOLON,
+        COMMA,
         ENUM_COUNT,
         // other token types
         LABEL,
@@ -188,15 +193,16 @@ pub const TokenStream = struct{
                     {
                         if(!(std.ascii.isAlNum(latestChar) or latestChar == '_') or latestChar == '.' or finalRun )
                         {
+                            var finalSlice : []const u8 = undefined;
                             if(!finalRun)
                             {
-                                try tokens.append(slice[0..slice.len-1]);
-                                try token_types.append(TokenType.LABEL);
+                                finalSlice = slice[0..slice.len-1];
                             }
                             else if(finalRun) {
-                                try tokens.append(targetData[startIndex..]);
-                                try token_types.append(TokenType.LABEL);
+                                finalSlice = targetData[startIndex..];
                             }
+                            try tokens.append(finalSlice);
+                            try token_types.append(TokenType.LABEL);
                             startIndex = startIndex + length-1;
                             length = 0;
                             mode = ParserMode.default;
@@ -256,9 +262,12 @@ pub const TokenStream = struct{
                             shouldBreak = true;
                         }
                     }
-
                     if(!shouldBreak) {
-                        //.std.debug.print("Unexpected token `{c}`\nlmao>>>\n`{s}`\n========\n", .{slice, targetData[0..startIndex]});
+                        if(!collectingIdentifier) {
+                            std.debug.print("\nUnexpected token `{c}`\n>>>>>\n", .{slice});
+                            startIndex += 1;
+                            length = 0;
+                        }
                     }
                 },
                 .text => {
@@ -266,15 +275,31 @@ pub const TokenStream = struct{
                     inline for(LeaveTextModeTokens) |tok| {
                         if(!shouldBreak and (std.mem.endsWith(u8, slice, tok) or finalRun ))
                         {
+                            var finalSlice: []const u8 = undefined;
                             if(finalRun)
                             {
-                                try tokens.append(targetData[startIndex..]);
-                                try token_types.append(TokenType.STORY_TEXT);
+                                finalSlice = targetData[startIndex..];
                             }
                             else {
-                                try tokens.append(slice[0..slice.len - 1]);
-                                try token_types.append(TokenType.STORY_TEXT);
+                                finalSlice = slice[0..slice.len - 1];
                             }
+
+                            // strip leading and trailing whitespaces.
+                            var finalSliceStartIndex:usize = 0;
+                            while(finalSlice[finalSliceStartIndex] == ' ' and finalSliceStartIndex < finalSlice.len - 1) 
+                            {
+                                finalSliceStartIndex += 1;
+                            }
+
+                            var finalSliceEndIndex:usize = finalSlice.len-1;
+                            while(finalSlice[finalSliceEndIndex] == ' ' and finalSliceEndIndex > 0) 
+                            {
+                                finalSliceEndIndex -= 1;
+                            }
+
+                            try tokens.append(finalSlice[finalSliceStartIndex..finalSliceEndIndex + 1]);
+                            try token_types.append(TokenType.STORY_TEXT);
+
                             startIndex = startIndex + length;
                             length = 0;
                             mode = ParserMode.default;
@@ -344,7 +369,7 @@ pub const TokenStream = struct{
 
 
 test "Tokenizing test" {
-    var stream = try TokenStream.MakeTokens(sampleData, std.testing.allocator);
+    var stream = try TokenStream.MakeTokens(easySampleData, std.testing.allocator);
     defer stream.deinit();
 
     stream.test_display();
