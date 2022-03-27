@@ -34,6 +34,7 @@ pub const easySampleData =
     \\        @set(PersonA.isPissedOff = true)
     \\        PersonA: Well fuck you bud.
     \\    > Hello:
+    \\        @debugPrint("Hello world!") # this is an execution
     \\        @goto hello
     \\    > Have some gold:
     \\        $: He takes it from you
@@ -103,12 +104,14 @@ pub const TokenStream = struct{
         "-",
         ",",
         ";",
+        "\"",
     };
 
     const LeaveTextModeTokens: []const []const u8 = &.{
         "\n",
         "\n\r", // 1 = r_square_brack
         "#",
+        ":",
     };
 
     const LeaveCommentModeTokens: []const []const u8 = &.{
@@ -138,8 +141,9 @@ pub const TokenStream = struct{
         HASHTAG,
         PLUS,
         MINUS,
-        SEMICOLON,
         COMMA,
+        SEMICOLON,
+        DOUBLE_QUOTE,
         ENUM_COUNT,
         // other token types
         LABEL,
