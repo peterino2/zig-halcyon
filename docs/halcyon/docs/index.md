@@ -160,3 +160,18 @@ graph TD;
     B-->C[PersonA: Haha you sure got me..];
     C-->D[PersonB: Get the hell away from..];
 ```
+
+```
+@if(PersonA_is_pissed)
+    PersonA: I am really pissed off
+    PersonB: If you're pissed off so am I!
+PersonA: I will say this line regardless of if I'm pissed off or not.
+```
+
+```mermaid
+graph TD;
+    A[if] --> B[PersonA: I am really pissed off..];
+    B --> D[PersonB: If you're pissed off so am I!];
+    D --> C[PersonB: I will say this..];
+    A --> C;
+```
