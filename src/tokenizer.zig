@@ -30,13 +30,13 @@ pub const easySampleData =
     \\PersonA: Can you fuck off?
     \\@else
     \\PersonA: Hello!
-    \\    > I hate you:
+    \\    > I hate you
     \\        @set(PersonA.isPissedOff = true)
     \\        PersonA: Well fuck you bud.
-    \\    > Hello:
+    \\    > Hello
     \\        @debugPrint("Hello world!") # this is an execution
     \\        @goto hello
-    \\    > Have some gold:
+    \\    > Have some gold
     \\        $: He takes it from you
     \\        @set(gold -= 50)
     \\        @set(PersonA.isPissedOff = false)

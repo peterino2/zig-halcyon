@@ -95,7 +95,7 @@ const StoryNodesError = error {
 
 const StoryNodes = struct {
     instances: ArrayList(Node),
-    textContent: ArrayList(NodeString),
+    textContent: ArrayList(NodeString), 
     speakerName: AutoHashMap(Node, NodeString),
     choices: AutoHashMap(Node, ArrayList(Node)),
     nextNode: AutoHashMap(Node, Node),
@@ -406,8 +406,7 @@ pub const ParseNodes = struct {
     // tokenWindows: ArrayList(TokenWindow), // consumed token terminals get pushed back here
     currentTokenWindow: TokenWindow = .{},
 
-    fn matchFunctionCallGeneric( slice: []const TokenType, data: anytype, functionName: []const u8) bool
-    {
+    fn matchFunctionCallGeneric( slice: []const TokenType, data: anytype, functionName: []const u8) bool {
         if(slice.len < 4 ) return false;
 
         if(data.len != slice.len) {
@@ -503,6 +502,7 @@ pub const ParseNodes = struct {
 
         return false;
     }
+
     fn tokMatchTabSpace(slice: []const TokenType, data: anytype) bool {
         if(slice.len < 4) return false;
         var i: u32 = 0;
@@ -594,19 +594,20 @@ pub const ParseNodes = struct {
             .tokenStream = try TokenStream.MakeTokens(source, alloc),
             .story = StoryNodes.init(alloc),
         };
-
+        defer self.tokenStream.deinit();
         const tokenTypes = self.tokenStream.token_types;
         const tokenData = self.tokenStream.tokens;
 
         var nodesCount: u32 = 0;
 
+        std.debug.print("\n", .{});
         while(self.isParsing) {
             const newestTokenIndex = self.currentTokenWindow.endIndex - 1;
             const tokenType = tokenTypes.items[newestTokenIndex];
             _ = tokenType;
             const tokenTypeSlice = tokenTypes.items[self.currentTokenWindow.startIndex..self.currentTokenWindow.endIndex];
             const dataSlice = tokenData.items[self.currentTokenWindow.startIndex..self.currentTokenWindow.endIndex];
-            std.debug.print("current window: {s} `{s}`\n", .{self.currentTokenWindow, dataSlice});
+            // std.debug.print("current window: {s} `{s}`\n", .{self.currentTokenWindow, dataSlice});
 
             var shouldBreak = false;
 
@@ -616,8 +617,7 @@ pub const ParseNodes = struct {
                 shouldBreak = true;
             }
             if(!shouldBreak and tokMatchGoto(tokenTypeSlice, dataSlice)){
-                nodesCount += 1;
-                std.debug.print("{d}: Goto\n", .{nodesCount});
+                std.debug.print("Goto\n", .{});
                 shouldBreak = true;
             }
             if(!shouldBreak and tokMatchIf(tokenTypeSlice, dataSlice)){
@@ -626,13 +626,11 @@ pub const ParseNodes = struct {
                 shouldBreak = true;
             }
             if(!shouldBreak and tokMatchElif(tokenTypeSlice, dataSlice)){
-                nodesCount += 1;
-                std.debug.print("{d}: If block start\n", .{nodesCount});
+                std.debug.print("If block start\n", .{});
                 shouldBreak = true;
             }
             if(!shouldBreak and tokMatchElse(tokenTypeSlice, dataSlice)){
-                nodesCount += 1;
-                std.debug.print("{d}: If block start\n", .{nodesCount});
+                std.debug.print("else block\n", .{});
                 shouldBreak = true;
             }
             if(!shouldBreak and tokMatchGenericDirective(tokenTypeSlice)){
@@ -641,8 +639,7 @@ pub const ParseNodes = struct {
                 shouldBreak = true;
             }
             if(!shouldBreak and tokMatchTabSpace(tokenTypeSlice, dataSlice)){
-                nodesCount += 1;
-                std.debug.print("{d}: New Tab Level\n", .{nodesCount});
+                std.debug.print("    ", .{});
                 shouldBreak = true;
             }
             // inline space clause
@@ -665,12 +662,12 @@ pub const ParseNodes = struct {
                 }
             }
             if(!shouldBreak and tokMatchLabelDeclare(tokenTypeSlice)){
-                std.debug.print("{d}: Label declare\n", .{nodesCount});
+                std.debug.print("Label declare\n", .{});
                 shouldBreak = true;
             }
             if(!shouldBreak and tokMatchComment(tokenTypeSlice))
             {
-                std.debug.print("{d}: comment (not a real node)\n", .{nodesCount});
+                // std.debug.print(" comment (not a real node)\n", .{nodesCount});
                 shouldBreak = true;
             }
             if(!shouldBreak and tokMatchDialogueWithSpeaker(tokenTypeSlice))
@@ -681,12 +678,13 @@ pub const ParseNodes = struct {
             }
             if(!shouldBreak and tokMatchDialogueContinuation(tokenTypeSlice))
             {
-                std.debug.print("{d}: Continuation of comment detected\n", .{nodesCount});
+                std.debug.print("Continuation of comment detected\n", .{});
                 shouldBreak = true;
             }
             if(!shouldBreak and tokMatchDialogueChoice(tokenTypeSlice))
             {
-                std.debug.print("{d}: Continuation of comment detected\n", .{nodesCount});
+                nodesCount += 1;
+                std.debug.print("{d}: Choice Node\n", .{nodesCount});
                 shouldBreak = true;
             }
             if(!shouldBreak and tokenTypeSlice[0] == TokenType.NEWLINE){
@@ -698,7 +696,10 @@ pub const ParseNodes = struct {
             {
                 self.currentTokenWindow.startIndex = self.currentTokenWindow.endIndex;
             }
-            if(self.currentTokenWindow.endIndex - self.currentTokenWindow.startIndex > 30) return self.story;
+            if(self.currentTokenWindow.endIndex - self.currentTokenWindow.startIndex > 3 and self.currentTokenWindow.endIndex >= tokenTypes.items.len){ 
+                std.debug.print("Unexpected end of file, parsing object from <here>, EOF seen <here>", .{});
+                return self.story; 
+            }
             if(self.currentTokenWindow.endIndex == tokenTypes.items.len)
             {
                 break;
@@ -716,241 +717,8 @@ pub const ParseNodes = struct {
     }
 };
 
-test "nodeswalker" 
+test "parse with nodes" 
 {
     var story= try ParseNodes.DoParse(tokenizer.easySampleData, std.testing.allocator);
-    defer story.deinit();
-}
-
-pub const ParserRunContext = struct {
-    const Self = @This();
-
-    const ParseState = enum {
-        default,
-        attributeDefinition,
-        funcArgsParse
-    };
-
-    const AstObjType = enum {
-        labelDefinition,
-        nodeDefinition,
-        choiceDefinition,
-        conditionalDefinition,
-    };
-
-    const AstBaseObj = struct {
-        tokStart: usize,
-        tokEnd: usize,
-        parserState: ParseState,
-        objType: AstObjType, 
-    };
-
-    const AstNodeDefinition = struct {
-
-    };
-
-    tokenStream: TokenStream,
-    isParsing: bool = true,
-    tokenIndex: usize = 0,
-    tabLevel: usize = 0,
-    newLining: bool = false,
-    lineNumber: usize = 1,
-    shouldBreak: bool = false,
-    parseState: Self.ParseState = .default,
-    shouldPrint: bool = false,
-    tokToAstStackStart: usize = 0,
-    tokToAstStackEnd: usize = 0,
-    story: StoryNodes, 
-
-    pub fn DoParse(source: []const u8, alloc: std.mem.Allocator, showPrintOut: bool) !StoryNodes {
-
-        var self = Self{
-            .tokenStream = try TokenStream.MakeTokens(source, alloc),
-            .story = StoryNodes.init(alloc),
-            .shouldPrint = showPrintOut
-        };
-
-        defer self.deinit();
-
-        var lastNode: Node = self.story.findNodeByLabel(storyEndLabel).?;
-        // not the most efficient method but I will just do a two-pass to produce
-        while(self.isParsing)
-        {
-            const tokType = self.tokenStream.token_types.items[self.tokenIndex];
-            const tokData = self.tokenStream.tokens.items[self.tokenIndex];
-            _ = tokData;
-            self.shouldBreak = false;
-
-            if(self.shouldPrint)
-            {
-                if(tokType == TokenType.NEWLINE)
-                {
-                    std.debug.print(
-                        "newline: ========== <{s}> end of line number: {d} ========== \n", 
-                        .{@tagName(tokType), self.lineNumber}
-                    );
-                }
-                else if(tokType == TokenType.COMMENT)
-                {
-                    std.debug.print(
-                        "comment: `{s}`\t<{s}> tab: {d}\n", 
-                        .{tokData, @tagName(tokType), self.tabLevel}
-                    );
-                }
-                else if(
-                    tokType == TokenType.R_SQBRACK or 
-                    tokType == TokenType.R_PAREN or 
-                    tokType == TokenType.SPACE or
-                    tokType == TokenType.L_SQBRACK or
-                    tokType == TokenType.L_PAREN
-                )
-                {
-                }
-                else {
-                    std.debug.print(
-                        "{s}: `{s}`\t<{s}> tab: {d}\n",
-                        .{@tagName(self.parseState), tokData, @tagName(tokType), self.tabLevel}
-                    );
-                }
-
-            }
-
-            if(!self.shouldBreak and self.newLining and tokType == TokenType.SPACE)
-            {
-                // do a look ahead and consume values as needed tab level of 4 spaces == 1 tab
-                var spaceCount: usize = 0;
-                var j: usize = self.tokenIndex;
-                var seeking = true;
-                while(seeking) {
-                    if(self.tokenStream.token_types.items[j] == TokenType.SPACE)
-                    {
-                        spaceCount = spaceCount + 1;
-                        if(spaceCount == 4)
-                        {
-                            self.tabLevel += 1;
-                            spaceCount = 0;
-                        }
-                    }
-                    else {
-                        seeking = false;
-                        break;
-                    }
-                    j += 1;
-                }
-                self.tokenIndex = j - 1;
-            }
-            switch(self.parseState) {
-                .default => {
-                    if(!self.shouldBreak and tokType == TokenType.L_SQBRACK)
-                    {
-                        self.shouldBreak = true;
-                        self.parseState = .attributeDefinition;
-                    }
-                    if(!self.shouldBreak and tokType == TokenType.AT)
-                    {
-                        // error, expected label after @ 
-                        if(self.tokenIndex + 1 >= self.tokenStream.token_types.items.len) 
-                        {
-                            try parserPanic(ParserError.UnexpectedTokenError, "Unexpected end of file");
-                        }
-                        if(self.tokenStream.token_types.items[self.tokenIndex + 1] != TokenType.LABEL) 
-                        {
-                            try parserPanic(ParserError.UnexpectedTokenError, "unexpected token");
-                        }
-
-                        if(self.shouldPrint) 
-                        {
-                            std.debug.print("{s}: `{s}`\t<{s}>  tab: {d}\n", 
-                                .{@tagName(self.parseState), 
-                                self.tokenStream.tokens.items[self.tokenIndex+1],
-                                @tagName(TokenType.LABEL), self.tabLevel}
-                            );
-                        }
-
-                        if(std.mem.eql(u8, self.tokenStream.tokens.items[self.tokenIndex + 1], "goto"))
-                        {
-                            // todo this creates a link
-                            self.tokenIndex += 1;
-                        }
-                        //else if (std.mem.eql(u8, tokStream.tokens[i + 1], "if")){
-                        //}
-                        else
-                        {
-                            // we expected arguments but reached end of file
-                            if(self.tokenIndex + 2 >= self.tokenStream.token_types.items.len) unreachable; 
-                            {
-                                if(self.tokenStream.token_types.items[self.tokenIndex + 2] == TokenType.L_PAREN)
-                                {
-                                    self.shouldBreak = true;
-                                    self.parseState = .funcArgsParse;
-                                    self.tokenIndex += 1; // consume the L_Paren
-                                }
-                            }
-                        }
-                        self.tokenIndex += 1;
-                    }
-                    if(tokType == TokenType.STORY_TEXT) 
-                    {
-                        var newNode = try self.story.newNodeWithContent(tokData, alloc);
-                        if(lastNode.id > 0)
-                        {
-                            try self.story.setLink(lastNode, newNode);
-                        }
-                        lastNode = newNode;
-                    }
-                },
-                .attributeDefinition => {
-                    if(!self.shouldBreak and tokType == TokenType.R_SQBRACK)
-                    {
-                        self.shouldBreak = true;
-                        self.parseState = .default;
-                    }
-                },
-                .funcArgsParse => {
-                    if(!self.shouldBreak and tokType == TokenType.R_PAREN)
-                    {
-                        self.shouldBreak = true;
-                        self.parseState = .default;
-                    }
-                }
-            }
-            if(tokType == TokenType.NEWLINE)
-            {
-                self.tabLevel = 0;
-                self.lineNumber += 1;
-                self.newLining = true;
-                self.shouldBreak = true;
-            }
-            if(self.tokenIndex + 1 >= self.tokenStream.tokens.items.len)
-            {
-                self.isParsing = false;
-                if(self.shouldPrint)
-                std.debug.print("endOfFile: <EOF> \n", .{});
-                continue;
-            }
-            self.tokenIndex += 1;
-        }
-
-        return self.story;
-    }
-
-    fn deinit(self: *Self) void
-    {
-        self.tokenStream.deinit();
-    }
-};
-
-test "parse Simple with statemachine"
-{
-    var story = try ParserRunContext.DoParse(
-        tokenizer.easySampleData, 
-        std.testing.allocator,
-        false
-    );
-
-    std.debug.print("story has {d} nodes\n", .{story.textContent.items.len});
-    for(story.textContent.items) | text | {
-        std.debug.print("added content node: {s} \n", .{text.asUtf8Native()});
-    }
     defer story.deinit();
 }
