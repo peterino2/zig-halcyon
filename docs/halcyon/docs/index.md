@@ -3,7 +3,7 @@
 Halcyon is the ultimate script for producing rich and reactive interactive fiction.
 
 
-Here's what we aim to provide. by v0.5.0
+Here's what we aim to provide. By v0.5.0.
 
 #### 📜 A simple language
 
@@ -54,6 +54,8 @@ George: Hello! how are you?
 ### Development
 
 The tool is currently in development by just me, Peterino. I am an engine and tools developer who works in the AAA gamedev space and wanted to have an elegant solution for my personal projects that is comparable or better to the tools I am familiar with at work.
+
+The tool is undergoing heavy development and is not publically available (yet).
 
 # The language
 
