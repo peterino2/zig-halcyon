@@ -429,7 +429,7 @@ pub const ParseNodes = struct {
     }
 
     // checks if a sequence of tokens matches the @set(...) directive
-    fn tokMatchSet( slice: []const TokenType, data: anytype) bool {
+    fn tokMatchSet( slice: []const TokenType, data: []const []const u8) bool {
         if(slice.len < 4) return false;
         if(slice[0] != TokenType.AT)  return false;
         if(slice[1] != TokenType.LABEL)  return false;

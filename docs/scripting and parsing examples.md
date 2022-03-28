@@ -21,12 +21,10 @@
 - v0.0.5 debugger interface
     - sockets
 
-## Quest example
+## Quest Example
 
 Quest states description. describing the data via json format, lots of changes 
-
 ```
-
 QuestDefinition: {
     QuestName: "The tale of the missing shoelace"
     QuestStateListeners: [
@@ -34,7 +32,7 @@ QuestDefinition: {
     ]
 }
 
-// quest states
+# Quest states
 
 {
     StateName,
@@ -42,7 +40,7 @@ QuestDefinition: {
         Journal: "Journal information"
     }
 }
-// QuestHandles can move from QuestStateToQuestState.
+# QuestHandles can move from QuestStateToQuestState.
 ```
 
 ## dialogue script example
@@ -57,18 +55,18 @@ QuestDefinition: {
 # it is reccomended that each script has their own subscope for things that they themselves define
 # or to have a master vars.halc file that defines top level variables
 
-@vars( // the vars codeblock is only used for importing and defining variables
-    def g.GameLevelVariable :bool = true;           // these are persistent across multiple interactors and are shared between all players
-    def p.PlayerLevelVariable :bool = true;         // the p. namespace is persistent for a specific player
-    def i.InteractionLevelVariable :bool = true;    // the i. namespace is for variables that exist for the lifetime of one Interactor Only
+@vars( # the vars codeblock is only used for importing and defining variables
+    def g.GameLevelVariable :bool = true;           # these are persistent across multiple interactors and are shared between all players
+    def p.PlayerLevelVariable :bool = true;         # the p. namespace is persistent for a specific player
+    def i.InteractionLevelVariable :bool = true;    # the i. namespace is for variables that exist for the lifetime of one Interactor Only
 
-    import g.SomeImportedVariable: bool;            // this is a variable that this script is expecting to be defined somewhere else.
+    import g.SomeImportedVariable: bool;            # this is a variable that this script is expecting to be defined somewhere else.
     import g.SomeImportedVariableWithDefault;
 )
 
-`use_vars(my_dialogue.vars) // you could also have something like this to directly use a vars file.
+`use_vars(my_dialogue.vars) # you could also have something like this to directly use a vars file.
 
-[dialogue start]
+[start] # labels can be assigned to a node
 $: Hello! I am the narrator.
 $: You can use the dollar sign to signify a line of dialogue.
     You can tab-in with 4 spaces to signify a longer piece of dialogue.
