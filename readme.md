@@ -2,7 +2,6 @@
 
 Halcyon is the ultimate script for producing rich and reactive interactive fiction.
 
-
 Here's what we aim to provide. By v0.5.0.
 
 #### 📜 A simple language
@@ -24,8 +23,8 @@ George: Hello! how are you?
 
 - Games are demanding for performance. Thats why this runtime is natively written in zig ⚡, it features no garbage collection, minimal memory footprint, and puts you in charge of it's compute.
 - Don't pay for what you don't use, the event system can be completely turned off.  Debug features can be stripped from production builds.
-- A lighting fast data oriented architecture and ECS runtime, hot-reload scripts while you're playing.
-- No dependencies. Other than the zig standard library, no messy dependencies are brought into your system
+- A lighting fast data oriented runtime with an ECS architecture, hot-reload scripts while you're playing.
+- No dependencies. Other than the zig standard library, no messy dependencies are brought into your system.
 
 #### 📜 Debugging for everyone
 
@@ -37,7 +36,7 @@ George: Hello! how are you?
 - Databases and spreadsheets for localization can be generated with a click of a button. All text is locally tagged with keys for localization.
 - Manage auxilary content such as recordings directly within project files.
 - Bake and cook entire games with hundreds of thousands of lines of text into compact, production ready shippable binaries.
-- Goal is to be in use in AA and AAA companies.
+- A goal of this project is to be in use by AA and AAA releases.
 
 #### 📜 Seamless integration with your projects
 
