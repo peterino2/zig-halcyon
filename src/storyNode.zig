@@ -93,15 +93,66 @@ const StoryNodesError = error {
     GeneralError
 };
 
+const FactVarTypes = enum 
+{
+    BoolType,
+    IntType,
+    BigIntType,
+    StringType,
+    GenericType,
+    //RefType,
+    MaxTypesCount,
+};
+// used to key into the factsDB
+const FactVarHandle = struct{
+    key: u32,   
+    // ... todo fill this guy out later theres a lot to do here.
+};
+
+const FactVar = union(enum) {
+    boolType: bool,
+    intType: u32,
+    bigIntType: u64,
+    stringType: NodeString,
+    genericType: struct {
+        // todo
+    }
+};
+
+pub const NodeDirective = union(enum)
+{
+    const Self = @This();
+    set: struct {
+        varToSet: FactVarHandle,
+        newValue: FactVar,
+    },
+    generic: struct {
+    },
+
+    pub fn fromUtf8Tokens(source: []const []const u8, alloc: std.mem.Allocator) Self {
+        // todo actually parse these nodes into directives
+        _ = source;
+        _ = alloc;
+        return Self{.generic = .{}};
+    }
+};
+
+const BranchNode = struct {
+    // todo
+};
+
 const StoryNodes = struct {
     instances: ArrayList(Node),
     textContent: ArrayList(NodeString), 
+    directives: AutoHashMap(Node, NodeDirective), 
     speakerName: AutoHashMap(Node, NodeString),
+    conditionalBlock: AutoHashMap(Node, BranchNode),
     choices: AutoHashMap(Node, ArrayList(Node)),
     nextNode: AutoHashMap(Node, Node),
     labels: std.StringHashMap(Node),
 
     const Self = @This();
+
 
     pub fn init(allocator: std.mem.Allocator) Self {
         var rv = Self{
@@ -111,6 +162,8 @@ const StoryNodes = struct {
             .choices = AutoHashMap(Node, ArrayList(Node)).init(allocator),
             .nextNode = AutoHashMap(Node, Node).init(allocator),
             .labels = std.StringHashMap(Node).init(allocator),
+            .directives = AutoHashMap(Node, NodeDirective).init(allocator),
+            .conditionalBlock = AutoHashMap(Node, BranchNode).init(allocator),
         };
         var node = rv.newNodeWithContent("@__STORY_END__", allocator) catch unreachable;
         rv.setLabel(node, "@__STORY_END__") catch unreachable;
@@ -119,6 +172,8 @@ const StoryNodes = struct {
 
     pub fn deinit(self: *Self) void {
         self.instances.deinit();
+        self.directives.deinit();
+        self.conditionalBlock.deinit();
         {
             var i: usize = 0;
             while (i < self.textContent.items.len) {
@@ -164,6 +219,27 @@ const StoryNodes = struct {
             try self.setLabel(node, storyStartLabel);
         }
         return node;
+    }
+
+    fn newDirectiveNodeFromUtf8(
+        self: *Self,
+        source: []const []const u8,
+        alloc: std.mem.Allocator
+    ) !Node {
+
+        // you have access to start and end window here.
+        var node = try self.newNodeWithContent("UNKNOWN DIRECTIVE", alloc);
+        var directive = NodeDirective.fromUtf8Tokens(source, alloc);
+        try self.directives.put(node, directive);
+
+        return node;
+    }
+
+    pub fn setTextContentFromSlice(self: *Self, node: Node, newContent: []const u8) !void
+    {
+        if(node.id >= self.textContent.items.len) return StoryNodesError.InstancesNotExistError;
+        self.textContent.items[node.id].string.clearAndFree();
+        try self.textContent.items[node.id].string.appendSlice(newContent);
     }
 
     pub fn setLabel(self: *Self,  id: Node, label: []const u8) !void {
@@ -430,20 +506,7 @@ pub const ParseNodes = struct {
 
     // checks if a sequence of tokens matches the @set(...) directive
     fn tokMatchSet( slice: []const TokenType, data: []const []const u8) bool {
-        if(slice.len < 4) return false;
-        if(slice[0] != TokenType.AT)  return false;
-        if(slice[1] != TokenType.LABEL)  return false;
-        if(slice[1] != TokenType.L_PAREN)  return false;
-        if(slice[slice.len-1] != TokenType.R_PAREN)  return false;
-
-        if(data.len != slice.len) {
-            std.debug.print("something is really wrong\n", .{});
-            return false;
-        }
-
-        if(!std.mem.eql(u8, data[1], "set")) return false;
-
-        return true;
+        return matchFunctionCallGeneric(slice, data, "set");
     }
 
     fn tokMatchGoto( slice: []const TokenType, data:anytype) bool {
@@ -466,6 +529,10 @@ pub const ParseNodes = struct {
 
     fn tokMatchElif(slice: []const TokenType, data:anytype) bool {
         return matchFunctionCallGeneric(slice, data, "elif");
+    }
+
+    fn tokMatchVarsBlock(slice: []const TokenType, data:anytype) bool {
+        return matchFunctionCallGeneric(slice, data, "vars");
     }
 
     fn tokMatchElse(slice: []const TokenType, data:anytype) bool {
@@ -610,10 +677,12 @@ pub const ParseNodes = struct {
             // std.debug.print("current window: {s} `{s}`\n", .{self.currentTokenWindow, dataSlice});
 
             var shouldBreak = false;
-
+            // oh man theres a few easy refactorings that can be done here that would midly improve performance.
             if(!shouldBreak and tokMatchSet(tokenTypeSlice, dataSlice)){
                 nodesCount += 1;
                 std.debug.print("{d}: Set var\n", .{nodesCount});
+                const node = try self.story.newDirectiveNodeFromUtf8(dataSlice, alloc);
+                try self.story.setTextContentFromSlice(node, "Set var");
                 shouldBreak = true;
             }
             if(!shouldBreak and tokMatchGoto(tokenTypeSlice, dataSlice)){
@@ -623,6 +692,9 @@ pub const ParseNodes = struct {
             if(!shouldBreak and tokMatchIf(tokenTypeSlice, dataSlice)){
                 nodesCount += 1;
                 std.debug.print("{d}: If block start\n", .{nodesCount});
+                const node = try self.story.newDirectiveNodeFromUtf8(dataSlice, alloc);
+                try self.story.setTextContentFromSlice(node, "If block");
+                try self.story.conditionalBlock.put(node, .{});
                 shouldBreak = true;
             }
             if(!shouldBreak and tokMatchElif(tokenTypeSlice, dataSlice)){
@@ -633,9 +705,18 @@ pub const ParseNodes = struct {
                 std.debug.print("else block\n", .{});
                 shouldBreak = true;
             }
+            if(!shouldBreak and tokMatchVarsBlock(tokenTypeSlice, dataSlice)){
+                nodesCount += 1;
+                const node = try self.story.newDirectiveNodeFromUtf8(dataSlice, alloc);
+                try self.story.setTextContentFromSlice(node, "Vars block");
+                std.debug.print("{d}: Vars block\n", .{nodesCount});
+                shouldBreak = true;
+            }
             if(!shouldBreak and tokMatchGenericDirective(tokenTypeSlice)){
                 nodesCount += 1;
                 std.debug.print("{d}: Generic Directive\n", .{nodesCount});
+                const node = try self.story.newDirectiveNodeFromUtf8(dataSlice, alloc);
+                try self.story.setTextContentFromSlice(node, "Generic Directive");
                 shouldBreak = true;
             }
             if(!shouldBreak and tokMatchTabSpace(tokenTypeSlice, dataSlice)){
@@ -672,7 +753,14 @@ pub const ParseNodes = struct {
             }
             if(!shouldBreak and tokMatchDialogueWithSpeaker(tokenTypeSlice))
             {
+                const node = try self.story.newNodeWithContent(dataSlice[2], alloc);
                 nodesCount += 1;
+
+                if(tokenTypeSlice[0] == TokenType.LABEL)
+                {
+                    try self.story.addSpeaker(node, try NodeString.fromUtf8(dataSlice[0], alloc));
+                }
+
                 std.debug.print("{d}: story node\n", .{nodesCount});
                 shouldBreak = true;
             }
@@ -719,6 +807,53 @@ pub const ParseNodes = struct {
 
 test "parse with nodes" 
 {
-    var story= try ParseNodes.DoParse(tokenizer.easySampleData, std.testing.allocator);
+    var story = try ParseNodes.DoParse(tokenizer.easySampleData, std.testing.allocator);
     defer story.deinit();
+    // try testChoicesList(story, &.{0,0,0,0}, std.testing.allocator);
+
+    std.debug.print("\n", .{});
+    for(story.textContent.items) |content, i|
+    {
+        const node = story.instances.items[i];
+        std.debug.assert(node.id == i);
+        if(story.directives.contains(node) or story.conditionalBlock.contains(node))
+        {
+            std.debug.print("{d}> {s}\n", .{i, content.asUtf8Native()});
+        }
+        else {
+            std.debug.print("{d}> STORY_TEXT: {s}\n", .{i, content.asUtf8Native()});
+        }
+    }
+    std.debug.print("\n", .{});
+}
+
+
+test "parse simplest with no-conditionals" 
+{
+    var story = try ParseNodes.DoParse(tokenizer.simplest_v1, std.testing.allocator);
+    defer story.deinit();
+    // try testChoicesList(story, &.{0,0,0,0}, std.testing.allocator);
+
+    std.debug.print("\n", .{});
+    for(story.textContent.items) |content, i|
+    {
+        if(i == 0) continue;
+        const node = story.instances.items[i];
+        std.debug.assert(node.id == i);
+        if(story.directives.contains(node) or story.conditionalBlock.contains(node))
+        {
+            std.debug.print("{d}> {s}\n", .{i, content.asUtf8Native()});
+        }
+        else {
+            if(story.speakerName.get(node)) |speaker|
+            {
+                std.debug.print("{d}> STORY_TEXT> {s}: {s}\n", .{i, speaker.asUtf8Native(), content.asUtf8Native()});
+            }
+            else 
+            {
+                std.debug.print("{d}> STORY_TEXT> $: {s}\n", .{i, content.asUtf8Native()});
+            }
+        }
+    }
+    std.debug.print("\n", .{});
 }
