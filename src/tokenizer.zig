@@ -7,6 +7,8 @@ pub const simplest_v1 =
     \\$: Hello!
     \\$: I'm going to ask you a question.
     \\: do you like cats or dogs?
+    \\[question]
+    \\$: 
     \\> Cats:
     \\    $: Hmm I guess we can't be friends
     \\> Dogs:
@@ -14,7 +16,7 @@ pub const simplest_v1 =
     \\    Lee: Yeah man they're delicious
     \\> Both:
     \\    $: Don't be stupid you have to pick one.
-    \\    @goto hello
+    \\    @goto question
     \\$: you walk away in disgust
     \\@end
 ;
@@ -30,17 +32,17 @@ pub const easySampleData =
     \\PersonA: Can you fuck off?
     \\@else
     \\PersonA: Hello!
-    \\    > I hate you
-    \\        @set(PersonA.isPissedOff = true)
-    \\        PersonA: Well fuck you bud.
-    \\    > Hello
-    \\        @debugPrint("Hello world!") # this is an execution
-    \\        @goto hello
-    \\    > Have some gold
-    \\        $: He takes it from you
-    \\        @set(gold -= 50)
-    \\        @set(PersonA.isPissedOff = false)
-    \\        PersonA: Ugh.. fine.. i am no longer pissed off at you.
+    \\> I hate you
+    \\    @set(PersonA.isPissedOff = true)
+    \\    PersonA: Well fuck you bud.
+    \\> Hello
+    \\    @debugPrint("Hello world!") # this is an execution
+    \\    @goto hello
+    \\> Have some gold
+    \\    $: He takes it from you
+    \\    @set(gold -= 50)
+    \\    @set(PersonA.isPissedOff = false)
+    \\    PersonA: Ugh.. fine.. i am no longer pissed off at you.
 ;
 
 pub const sampleData = 
