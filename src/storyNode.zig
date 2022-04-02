@@ -272,6 +272,18 @@ const StoryNodes = struct {
         try value.value_ptr.appendSlice(choices);
     }
 
+    pub fn addChoiceByNode(self: *Self, node: Node, choice: Node, alloc: std.mem.Allocator) !void {
+        if(!self.choices.contains(node))
+        {
+            var value = try self.choices.getOrPut(node);
+            value.value_ptr.* = ArrayList(Node).init(alloc);
+        }
+        {
+            var value = try self.choices.getOrPut(node);
+            try value.value_ptr.append(choice);
+        }
+    }
+
     pub fn addSpeaker(self: *Self, node: Node, speaker: NodeString) !void {
         try self.speakerName.put(node, speaker);
     }
@@ -570,8 +582,39 @@ pub const NodeParser = struct {
                 lastNode: Node,
             },
             choice: struct {
-                parent: Node,
             }
+        },
+        
+        pub fn displayPretty(self: NodeLinkingRules) void
+        {
+            if(self.node.id == 0) 
+            {
+                std.debug.print("node: NULL NODE \n", .{});
+                return;
+            }
+            std.debug.print("node: {d} t={d} ", .{self.node.id, self.tabLevel});
+            if(self.label) |label| {
+                std.debug.print("->[{s}]", .{label});
+            }
+            if(self.explicit_goto) |goto| {
+                std.debug.print("->[ID: {d}]", .{goto});
+            }
+
+            switch( self.typeInfo )
+            {
+                .linear => |info| {
+                    if(info.shouldLinkToLast)
+                    {
+                        std.debug.print(" comes from : {d}", .{info.lastNode.id});
+                    }
+                },
+                .choice => |info|
+                {
+                    std.debug.print(" choice node", .{});
+                    _ = info;
+                }
+            }
+            std.debug.print("\n", .{});
         }
     };
 
@@ -702,7 +745,9 @@ pub const NodeParser = struct {
 
     fn addCurrentDialogueChoiceFromUtf8Content(self: *Self, choiceContent: []const u8, alloc: std.mem.Allocator) !void {
         var node = try self.story.newNodeWithContent(choiceContent, alloc);
-        try self.finishCreatingNode(node, self.MakeLinkingRules(node));
+        var rules =  self.MakeLinkingRules(node);
+        rules.typeInfo = .{.choice = .{}};
+        try self.finishCreatingNode(node, rules);
         _ = alloc;
     }
 
@@ -734,15 +779,10 @@ pub const NodeParser = struct {
         try self.nodeLinkingRules.append(params);
 
         // handle linking
-        // if (self.lastNode.id > 0 and !self.story.nextNode.contains(self.lastNode)) 
-        // {
-        //     try self.story.setLink(self.lastNode, node);
-        // }
-
-        // if (self.hasLastLabel and params.shouldLinkToLast) {
-        //     self.hasLastLabel = false;
-        //     try self.story.setLabel(node, self.lastLabel);
-        // }
+        if (self.hasLastLabel) {
+            self.hasLastLabel = false;
+            try self.story.setLabel(node, self.lastLabel);
+        }
 
         // var currentScope = self.scopes.items[self.currentScopeId];
 
@@ -827,6 +867,145 @@ pub const NodeParser = struct {
         return rv;
     }
 
+    const TabScope = struct {
+        leafNodes: ArrayList(Node),
+        ownerNode: Node,
+
+        pub fn addNewNode(self: *TabScope, node: Node) !void
+        {
+            try self.leafNodes.append(node);
+        }
+        pub fn joinScope(self: *TabScope, other: *TabScope) !void
+        {
+            try other.leafNodes.appendSlice(self.leafNodes.items);
+        }
+        pub fn init(node:Node, alloc: std.mem.Allocator) TabScope {
+            return .{.leafNodes = ArrayList(Node).init(alloc), .ownerNode = node };
+        }
+        pub fn deinit(self: *TabScope)void{
+            self.leafNodes.deinit();
+        }
+        pub fn deinitAllScopes(scopes:*ArrayList(TabScope)) void
+        {
+            var i: usize = 0;
+            while(i < scopes.items.len )
+            {
+                scopes.items[i].deinit();
+                i += 1;
+            }
+            scopes.deinit();
+        }
+    };
+
+    pub fn LinkNodes(self: *Self, alloc: std.mem.Allocator) !void {
+        assert(self.nodeLinkingRules.items.len == self.story.instances.items.len);
+
+        // first pass, link all linear nodes and choices
+        {
+            var i: usize = 0;
+            while(i < self.nodeLinkingRules.items.len)
+            {
+                const rule = self.nodeLinkingRules.items[i];
+                rule.displayPretty();
+                switch(rule.typeInfo)
+                {
+                    .linear => |info| {
+                        if(rule.label) |label|
+                        {
+                            _ =try self.story.setLinkByLabel(rule.node, label);
+                        }
+                        else {
+                            try self.story.setLink(info.lastNode, rule.node);
+                        }
+                    },
+                    .choice => {
+
+                    }
+                }
+                i += 1;
+            }
+
+        }
+
+        // second pass, collapse blocks based on tabscoping
+        var scopes = ArrayList(TabScope).init(alloc);
+        try scopes.append(TabScope.init(.{}, alloc));
+        defer TabScope.deinitAllScopes(&scopes);
+
+        {
+            var i: usize = 0;
+            while(i < self.nodeLinkingRules.items.len)
+            {
+                const rule = self.nodeLinkingRules.items[i];
+                if((rule.tabLevel + 1) == scopes.items.len + 1) {
+                    var newScope = TabScope.init(self.nodeLinkingRules.items[i-1].node,alloc);
+                    try scopes.append(newScope);
+                    switch(rule.typeInfo)
+                    {
+                        .linear => {
+                            if(!self.story.nextNode.contains(rule.node))
+                            {
+                                // this is a leaf node. add it to the scope leaf nodes
+                                std.debug.print("adding leaf node {s}\n", .{rule.node});
+                                try scopes.items[scopes.items.len - 1].addNewNode(rule.node);
+                            }
+                        },
+                        .choice => {
+                            try self.story.addChoiceByNode(scopes.items[scopes.items.len - 1].ownerNode, rule.node, alloc);
+                        }
+                    }
+                }
+                else if((rule.tabLevel + 1) < scopes.items.len) {
+                    var popCount: usize = scopes.items.len - (rule.tabLevel + 1);
+                    while(popCount > 0)
+                    {
+                        var scope = scopes.pop();
+                        try scope.joinScope(&scopes.items[scopes.items.len - 1]);
+                        scope.deinit();
+                        popCount -= 1;
+                    }
+                    std.debug.print("leafcount: {d} {d}\n", .{ i, scopes.items[scopes.items.len - 1].leafNodes.items.len});
+                    
+                    switch(rule.typeInfo)
+                    {
+                        .linear => {
+                            for(scopes.items[scopes.items.len - 1].leafNodes.items) |fromNode|
+                            {
+                                try self.story.setLink(fromNode, rule.node);
+                            }
+                            scopes.items[scopes.items.len - 1].leafNodes.clearAndFree();
+                        },
+                        .choice => {
+                            try self.story.addChoiceByNode(scopes.items[scopes.items.len - 1].ownerNode, rule.node, alloc);
+                        }
+                    }
+                }
+                else if((rule.tabLevel + 1) > scopes.items.len + 1){
+                    std.debug.print("{d} {d}\n", .{rule.tabLevel, scopes.items.len});
+                    try parserPanic(ParserError.GeneralParserError, "Inconsistent tab level \n");
+                }
+                else 
+                {
+                    switch(rule.typeInfo)
+                    {
+                        .linear => {
+                            if(!self.story.nextNode.contains(rule.node))
+                            {
+                                // this is a leaf node. add it to the scope leaf nodes
+                                std.debug.print("adding leaf node {s}\n", .{rule.node});
+                                try scopes.items[scopes.items.len - 1].addNewNode(rule.node);
+                            }
+                        },
+                        .choice => {
+                            try self.story.addChoiceByNode(scopes.items[scopes.items.len - 1].ownerNode, rule.node, alloc);
+                        }
+                    }
+                }
+                i += 1;
+            }
+        }
+    }
+
     pub fn DoParse(source: []const u8, alloc: std.mem.Allocator) !StoryNodes {
         var self = try Self.MakeParser(source, alloc);
         defer self.deinit();
@@ -859,7 +1038,7 @@ pub const NodeParser = struct {
                 std.debug.print("Goto\n", .{});
                 std.debug.print("{d} -> ", .{self.lastNode.id});
                 if (self.lastNode.id > 0) {
-                    
+                    self.nodeLinkingRules.items[self.lastNode.id].label = dataSlice[dataSlice.len - 1];
                 } else {
                     return ParserError.GeneralParserError;
                 }
@@ -868,7 +1047,8 @@ pub const NodeParser = struct {
             if (!shouldBreak and tokMatchEnd(tokenTypeSlice, dataSlice)) {
                 std.debug.print("end of story\n", .{});
                 if (self.lastNode.id > 0) {
-                    try self.story.setLink(self.lastNode, self.story.instances.items[0]);
+                    //try self.story.setLink(self.lastNode, self.story.instances.items[0]);
+                    self.nodeLinkingRules.items[self.lastNode.id].explicit_goto = self.story.getNullNode();
                 }
                 shouldBreak = true;
             }
@@ -985,7 +1165,7 @@ pub const NodeParser = struct {
             }
         }
 
-        assert(self.nodeLinkingRules.items.len == self.story.instances.items.len);
+        try self.LinkNodes(alloc);
         return self.story;
     }
 };
