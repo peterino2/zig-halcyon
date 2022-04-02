@@ -333,7 +333,6 @@ pub const Interactor = struct {
             if (self.isRecording) {
                 try self.history.append(self.node);
             }
-
             if (story.nextNode.contains(self.node)) {
                 self.node = story.nextNode.get(self.node).?;
             } else if (story.choices.contains(self.node)) {
@@ -347,6 +346,13 @@ pub const Interactor = struct {
         }
     }
 };
+
+const ScopeType = enum {
+    LinearScope,
+    ChoiceScope,
+    ConditionalScope,
+};
+
 pub const NodeParser = struct {
     const Self = @This();
     const TokenWindow = struct {
@@ -358,21 +364,25 @@ pub const NodeParser = struct {
         shouldLinkToLast: bool = true,
     };
 
+
     const ParseScope = struct {
         parentScope: usize,
-        tabLevel: u32,
+        tabLevel: usize,
         childScopes: ArrayList(usize),
         firstNodeInScope: Node,
         lastNodeInScope: Node,
+        childLeafNodes: ArrayList(Node),
+        scopeType: ScopeType = ScopeType.LinearScope,
 
         pub fn deinit(self: *ParseScope) void {
             self.childScopes.deinit();
+            self.childLeafNodes.deinit();
         }
     };
 
     pub fn MakeScope(
         parentScopeId: usize,
-        tabLevel: u32,
+        tabLevel: usize,
         firstNode: Node,
         alloc: std.mem.Allocator,
     ) ParseScope {
@@ -381,7 +391,9 @@ pub const NodeParser = struct {
             .lastNodeInScope = firstNode,
             .parentScope = parentScopeId,
             .childScopes = ArrayList(usize).init(alloc),
+            .childLeafNodes = ArrayList(Node).init(alloc),
             .tabLevel = tabLevel,
+            .scopeType = ScopeType.ChoiceScope,
         };
 
         return self;
@@ -394,6 +406,7 @@ pub const NodeParser = struct {
     lineNumber: usize = 1,
     story: StoryNodes,
     currentTokenWindow: TokenWindow = .{},
+    currentNodeForChoiceEval: Node = .{},
     lastNode: Node = .{},
     lastLabel: []const u8,
     hasLastLabel: bool = false,
@@ -412,14 +425,25 @@ pub const NodeParser = struct {
         self.currentScopeId = self.scopes.items.len - 1;
     }
 
+    // probably not use this
+    pub fn addParallelScope(self: *Self, node: Node, alloc: std.mem.Allocator) !void {
+        var currentScope = self.scopes.items[self.currentScopeId];
+        var parentScope = currentScope.parentScope;
+        try self.pushScope(NodeParser.MakeScope(parentScope, self.tabLevel, node, alloc));
+    }
+
+    pub fn backupScope(self: *Self, count: usize) !void {
+        _ = self;
+        _ = count;
+    }
+
     pub fn finishScope(self: *Self) !void {
         var scope = self.scopes.items[self.currentScopeId];
         // printout first and last nodes for each scope until we get back to parent.
         var parentId = scope.parentScope;
         std.debug.print("Starting new scope collapse closing to parent: {d} currentScopeId {d}\n", .{ parentId, self.currentScopeId });
-        for (self.scopes.items[parentId + 1 ..]) |_, i| {
+        for (self.scopes.items[parentId + 1 ..]) |scopeToClose, i| {
             var len = self.scopes.items.len;
-            var scopeToClose = self.scopes.pop();
             std.debug.print(
                 "closing scope parent:{d} scopeId:{d} tablevel:{d}\n",
                 .{
@@ -428,9 +452,30 @@ pub const NodeParser = struct {
                     scopeToClose.tabLevel,
                 },
             );
+
+            std.debug.print("tagname: {s}\n", .{@tagName(scopeToClose.scopeType)});
+            if (scopeToClose.scopeType == ScopeType.ChoiceScope or scopeToClose.scopeType == ScopeType.ConditionalScope)
+            {
+                if(scopeToClose.childLeafNodes.items.len > 0)
+                {
+                    for(scopeToClose.childLeafNodes.items) |leafChild|
+                    {
+                        try self.scopes.items[parentId].childLeafNodes.append(leafChild);
+                    }
+                }
+                else 
+                {
+                    try self.scopes.items[parentId].childLeafNodes.append(scopeToClose.lastNodeInScope);
+                }
+            }
+        }
+        var i: usize = self.scopes.items.len - 1;
+        while (i > parentId) : (i -= 1) {
+            var scopeToClose = self.scopes.pop();
             scopeToClose.deinit();
         }
         self.currentScopeId = parentId;
+        std.debug.print("currentScopeId {d}\n", .{self.currentScopeId});
     }
 
     fn startDialogueChoice(self: *Self, alloc: std.mem.Allocator) !void {
@@ -453,7 +498,7 @@ pub const NodeParser = struct {
 
         if (self.story.choices.getEntry(self.currentNodeForChoiceEval)) |e| {
             try e.value_ptr.append(node);
-            std.debug.print("{s}> has this number of choices:{d} {d}\n", .{ self.currentNodeForChoiceEval, node.id, e.value_ptr.*.items.len });
+            std.debug.print("{s} ->> {d} has this number of choices: {d}\n", .{ self.currentNodeForChoiceEval, node.id, e.value_ptr.*.items.len });
             try self.finishCreatingNode(node, FinishParams{ .shouldLinkToLast = false });
         }
     }
@@ -646,6 +691,14 @@ pub const NodeParser = struct {
             self.hasLastLabel = false;
             try self.story.setLabel(node, self.lastLabel);
         }
+
+        var currentScope = self.scopes.items[self.currentScopeId];
+        // scopetabbing here
+        if(self.tabLevel)
+        {
+
+        }
+
         self.lastNode = node;
     }
 
@@ -677,6 +730,7 @@ pub const NodeParser = struct {
             .lastNodeInScope = .{},
             .parentScope = 0,
             .childScopes = ArrayList(usize).init(alloc),
+            .childLeafNodes = ArrayList(Node).init(alloc),
         });
         return rv;
     }
@@ -706,10 +760,7 @@ pub const NodeParser = struct {
                 std.debug.print("{d}: Set var\n", .{nodesCount});
                 const node = try self.story.newDirectiveNodeFromUtf8(dataSlice, alloc);
                 try self.story.setTextContentFromSlice(node, "Set var");
-                if (self.lastNode.id > 0) {
-                    try self.story.setLink(self.lastNode, node);
-                    self.lastNode = node;
-                }
+                try self.finishCreatingNode(node, .{});
                 shouldBreak = true;
             }
             if (!shouldBreak and tokMatchGoto(tokenTypeSlice, dataSlice)) {
@@ -999,6 +1050,72 @@ test "init and deinit" {
     defer x.deinit();
 }
 
+test "scopetraversals" 
+{
+    var self = try NodeParser.MakeParser(
+        tokenizer.simplest_v1,
+        std.testing.allocator,
+    );
+    defer self.story.deinit();
+    defer self.deinit();
+    std.debug.print("\n", .{});
+    const tabLevels: []const usize = &.{ 0, 1, 1, 1, 0};
+    // xx a t=0 
+    // 00   > b  t=1
+    // 01     c    t=2
+    // 02       > 3 t=3
+    // 03     d  t=2
+    // 04       > e  t=3
+    // 05       > h
+    // 06     f  t=2 this collapse gives me two
+    // 07   > g t=1
+    // 08   > h t=1
+    // xx i t=0 collapsing here should give me 3 leaf nodes
+
+    const scopeTypes: []const ScopeType = &.{
+        ScopeType.LinearScope,
+        ScopeType.ChoiceScope,
+        ScopeType.ChoiceScope,
+        ScopeType.ChoiceScope,
+        ScopeType.LinearScope,
+    };
+
+    _ = scopeTypes;
+
+
+    for(tabLevels) |tabLevel, i| {
+        if(tabLevel > self.tabLevel)
+        {
+            if(tabLevel - self.tabLevel > 1)
+            {
+                std.debug.print("Unexpected indent level, indented too deep\n", .{});
+            }
+            var node = NodeParser.MakeScope(self.currentScopeId, tabLevel, Node{ .id = i }, std.testing.allocator);
+            node.scopeType = scopeTypes[i];
+            try self.pushScope( node );
+        }
+        else if(tabLevel < self.tabLevel)
+        {
+            var j = self.tabLevel - tabLevel;
+            while(j > 0 ) {
+                try self.finishScope();
+                std.debug.print("number of leaf nodes ( we expect something idk): {d}\n", .{self.scopes.items[self.currentScopeId].childLeafNodes.items.len});
+                j -= 1;
+            }
+        }
+        else{
+            const currentScope = self.scopes.items[self.currentScopeId];
+            var node = NodeParser.MakeScope(currentScope.parentScope, tabLevel, Node{ .id = i }, std.testing.allocator);
+            node.scopeType = scopeTypes[i];
+            try self.pushScope( node );
+        }
+        
+        self.tabLevel = tabLevel;
+    }
+
+    std.debug.print("number of leaf nodes ( we expect something idk): id={d} {d}\n", .{self.currentScopeId, self.scopes.items[self.currentScopeId].childLeafNodes.items.len});
+}
+
 test "scopeCrushing" {
     var parser = try NodeParser.MakeParser(
         tokenizer.simplest_v1,
@@ -1009,6 +1126,7 @@ test "scopeCrushing" {
     defer parser.deinit();
     std.debug.print("\n", .{});
 
+    const alloc = std.testing.allocator;
     // 1
     // 2
     //   3
@@ -1017,34 +1135,56 @@ test "scopeCrushing" {
     //     6
     // 7
 
+    // last finish scope should close these guys
     try parser.pushScope(
-        NodeParser.MakeScope(1, 1, Node{ .id = 1 }, std.testing.allocator),
+        NodeParser.MakeScope(parser.currentScopeId, 1, Node{ .id = 2 }, std.testing.allocator),
     );
 
+    // second finish scope should close these guys
     try parser.pushScope(
-        NodeParser.MakeScope(1, 1, Node{ .id = 2 }, std.testing.allocator),
+        NodeParser.MakeScope(parser.currentScopeId, 2, Node{ .id = 3 }, std.testing.allocator),
     );
 
+    parser.tabLevel = 3;
+    // first finish scope should close these guys
     try parser.pushScope(
-        NodeParser.MakeScope(2, 2, Node{ .id = 3 }, std.testing.allocator),
+        NodeParser.MakeScope(parser.currentScopeId, 3, Node{ .id = 4 }, std.testing.allocator),
     );
 
-    try parser.pushScope(
-        NodeParser.MakeScope(3, 3, Node{ .id = 3 }, std.testing.allocator),
-    );
-    try parser.pushScope(
-        NodeParser.MakeScope(3, 3, Node{ .id = 3 }, std.testing.allocator),
-    );
-    try parser.pushScope(
-        NodeParser.MakeScope(3, 3, Node{ .id = 3 }, std.testing.allocator),
-    );
+    try parser.addParallelScope(Node{ .id = 5 }, alloc);
+    try parser.addParallelScope(Node{ .id = 6 }, alloc);
+
+    try parser.finishScope();
+
+    // try parser.pushScope(
+    //     NodeParser.MakeScope(parser.currentScopeId, 2, Node{ .id = 7 }, std.testing.allocator),
+    // );
+
+    try parser.addParallelScope(Node{ .id = 5 }, alloc);
+    try parser.addParallelScope(Node{ .id = 6 }, alloc);
 
     try parser.finishScope();
     try parser.finishScope();
 
+    std.debug.print("current scope id: {d}", .{parser.currentScopeId});
+    std.debug.assert(parser.currentScopeId == 0);
+    std.debug.assert(parser.scopes.items.len == 1);
+
+    // last finish scope should close these guys
     try parser.pushScope(
-        NodeParser.MakeScope(0, 1, Node{ .id = 4 }, std.testing.allocator),
+        NodeParser.MakeScope(parser.currentScopeId, 1, Node{ .id = 8 }, std.testing.allocator),
     );
+
+    try parser.addParallelScope(Node{ .id = 2 }, alloc);
+    try parser.addParallelScope(Node{ .id = 2 }, alloc);
+
+    try parser.finishScope();
+
+    if (!(parser.currentScopeId == 0)) {
+        std.debug.print("current scope id: {d}", .{parser.currentScopeId});
+    }
+    std.debug.assert(parser.currentScopeId == 0);
+    std.debug.assert(parser.scopes.items.len == 1);
 
     std.debug.print("WHOO\n", .{});
 }
