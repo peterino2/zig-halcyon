@@ -87,7 +87,7 @@ pub const simplest_stress =
     \\        $: Nice!
     \\        Lee: Yeah man they're delicious
     \\    > this option ends the dialogue:
-    \\    @end
+    \\        @end
     \\    > Both:
     \\        $: Don't be stupid you have to pick one.
     \\        @goto question
@@ -438,7 +438,6 @@ test "Tokenizing test" {
     var stream = try TokenStream.MakeTokens(easySampleData, std.testing.allocator);
     defer stream.deinit();
 
-    stream.test_display();
     // skipping the ast stage will make things easier but could possibly make things more difficult later..
     // ehh fuck it.
 }
