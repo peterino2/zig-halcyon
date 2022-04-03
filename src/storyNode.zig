@@ -355,12 +355,13 @@ pub const Interactor = struct {
             if (self.isRecording) {
                 try self.history.append(self.node);
             }
-            if (story.nextNode.contains(self.node)) {
-                self.node = story.nextNode.get(self.node).?;
-            } else if (story.choices.contains(self.node)) {
+            if (story.choices.contains(self.node)) {
                 self.node = story.choices.get(self.node).?.items[iter[currentChoiceIndex]];
                 currentChoiceIndex += 1;
             }
+            else if (story.nextNode.contains(self.node)) {
+                self.node = story.nextNode.get(self.node).?;
+            }  
         }
 
         if (self.isRecording) {
@@ -784,7 +785,10 @@ pub const NodeParser = struct {
                 switch(rule.typeInfo)
                 {
                     .linear => |info| {
-                        try self.story.setLink(info.lastNode, rule.node);
+                        if(!self.story.nextNode.contains(info.lastNode))
+                        {
+                            try self.story.setLink(info.lastNode, rule.node);
+                        }
                     },
                     .choice => {
 
@@ -794,15 +798,16 @@ pub const NodeParser = struct {
                 if(rule.label) |label|
                 {
                     std.debug.print("goto from {d} -> {s}\n", .{rule.node, label});
-                    _ =try self.story.setLinkByLabel(rule.node, label);
+                    _ = try self.story.setLinkByLabel(rule.node, label);
                 }
-                if(rule.explicit_goto) |goto|
+                else if(rule.explicit_goto) |goto|
                 {
-                    _ =try self.story.setLink(rule.node, goto);
+                    _ = try self.story.setLink(rule.node, goto);
                 }
+
+                // std.debug.print("{s} -> {s}\n", .{rule.node, self.story.nextNode.get(rule.node)});
                 i += 1;
             }
-
         }
 
         // second pass, collapse blocks based on tabscoping
@@ -810,11 +815,13 @@ pub const NodeParser = struct {
         try scopes.append(TabScope.init(.{}, alloc));
         defer TabScope.deinitAllScopes(&scopes);
 
+        std.debug.print("\n\n", .{});
         {
             var i: usize = 0;
             while(i < self.nodeLinkingRules.items.len)
             {
                 const rule = self.nodeLinkingRules.items[i];
+                // std.debug.print("STATE {s} -> {s}\n", .{rule.node, self.story.nextNode.get(rule.node)});
                 if((rule.tabLevel + 1) == scopes.items.len + 1) {
                     var newScope = TabScope.init(self.nodeLinkingRules.items[i-1].node,alloc);
                     try scopes.append(newScope);
@@ -849,7 +856,11 @@ pub const NodeParser = struct {
                         .linear => {
                             for(scopes.items[scopes.items.len - 1].leafNodes.items) |fromNode|
                             {
-                                try self.story.setLink(fromNode, rule.node);
+                                if(!self.story.nextNode.contains(fromNode))
+                                {
+                                    // std.debug.print("SETLINK {s} -> {s}\n", .{fromNode, rule.node});
+                                    try self.story.setLink(fromNode, rule.node);
+                                }
                             }
                             scopes.items[scopes.items.len - 1].leafNodes.clearAndFree();
                         },
@@ -1124,7 +1135,7 @@ test "parse with nodes" {
 }
 
 test "parse simplest with no-conditionals" {
-    var story = try NodeParser.DoParse(tokenizer.simplest_stress, std.testing.allocator);
+    var story = try NodeParser.DoParse(tokenizer.simplest_v1, std.testing.allocator);
     defer story.deinit();
     // try testChoicesList(story, &.{0,0,0,0}, std.testing.allocator);
 
@@ -1173,6 +1184,25 @@ fn testChoicesList(story: StoryNodes, choicesList: []const usize, alloc: std.mem
     try interactor.iterateChoicesList(choicesList); // path 1
     interactor.showHistory();
 }
+
+test "parsed simple storyNode" {
+    const alloc = std.testing.allocator;
+    var story = try NodeParser.DoParse(tokenizer.simplest_v1, std.testing.allocator);
+    defer story.deinit();
+    {
+        std.debug.print("\nPath 1 test -----\n", .{});
+        try testChoicesList(story, &.{0}, alloc);
+    }
+    {
+        std.debug.print("\nPath 2 test -----\n", .{});
+        try testChoicesList(story, &.{1}, alloc);
+    }
+    {
+        std.debug.print("\nPath 3 test -----\n", .{});
+        try testChoicesList(story, &.{ 2, 2, 1 }, alloc);
+    }
+}
+
 
 test "manual simple storyNode" {
     const alloc = std.testing.allocator;
