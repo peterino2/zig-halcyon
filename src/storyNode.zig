@@ -130,6 +130,7 @@ const BranchNode = struct {
 const StoryNodes = struct {
     instances: ArrayList(Node),
     textContent: ArrayList(NodeString),
+
     directives: AutoHashMap(Node, NodeDirective),
     speakerName: AutoHashMap(Node, NodeString),
     conditionalBlock: AutoHashMap(Node, BranchNode),
@@ -675,51 +676,6 @@ pub const NodeParser = struct {
             self.hasLastLabel = false;
             try self.story.setLabel(node, self.lastLabel);
         }
-
-        // var currentScope = self.scopes.items[self.currentScopeId];
-
-        // var newScopeType = ScopeType.LinearScope;
-        // var newParentNode: Node = .{};
-        // if(params.isChoiceScope)
-        // {
-        //     newScopeType = ScopeType.ChoiceScope;
-        //     newParentNode = self.currentNodeForChoiceEval;
-        // }
-
-        // scopetabbing here
-        // if(self.tabLevel == self.getCurrentScopeTabLevel() + 1)
-        // {
-        //     // this pushes a scope inferior to the current scope
-        //     var newScope = NodeParser.MakeScope(self.currentScopeId, self.tabLevel, node, std.testing.allocator);
-        //     newScope.scopeType = newScopeType;
-        //     newScope.parentNode = newParentNode;
-        //     try self.pushScope( newScope );
-        // }
-        // else if(self.tabLevel < self.getCurrentScopeTabLevel()){
-        //     // this closes scopes down to the previous tablevel
-        //     var j = self.getCurrentScopeTabLevel() - self.tabLevel;
-        //     while(j > 0 ) {
-        //         try self.finishScope();
-        //         j -= 1;
-        //     }
-        //     std.debug.print("number of leaf nodes ( we expect something idk): {s}\n", .{self.scopes.items[self.currentScopeId].childLeafNodes.items,},);
-        // }
-        // else if(self.tabLevel == self.getCurrentScopeTabLevel())
-        // {
-        //     currentScope.lastNodeInScope = node;
-        // }
-        // else 
-        // {
-        //     try parserPanic(ParserError.GeneralParserError, "Inconsistent Tabbing");
-        // }
-
-        // link all child nodes to the next
-        // for(self.scopes.items[self.currentScopeId].childLeafNodes.items) |linkFromNode| {
-        //     if(!self.story.explicitLink.contains(linkFromNode))
-        //     {
-        //         try self.story.setLink(linkFromNode, node);
-        //     }
-        // }
     }
 
     fn deinit(self: *Self) void {

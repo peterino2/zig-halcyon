@@ -5,10 +5,9 @@ const AutoHashMap = std.AutoHashMap;
 pub const simplest_v1 =
     \\[hello]
     \\$: Hello!
+    \\[question]
     \\$: I'm going to ask you a question.
     \\: do you like cats or dogs?
-    \\[question]
-    \\$: 
     \\    > Cats:
     \\        $: Hmm I guess we can't be friends
     \\    > Dogs:
@@ -110,14 +109,14 @@ pub const simplest_stress =
 
 pub const easySampleData =
     \\@vars(
-    \\  gold = 50,
-    \\  PersonA.isPissedOff = false,
+    \\  def gold = 50,
+    \\  def PersonA.isPissedOff = false,
     \\)
     \\
     \\[hello]
     \\# this a seperated comment
     \\@if(PersonA.isPissedOff)
-    \\      PersonA: Can you fuck off?
+    \\     PersonA: Can you fuck off?
     \\@else
     \\    PersonA: Hello!
     \\        > I hate you
