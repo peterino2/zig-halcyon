@@ -7,6 +7,7 @@ const TokenType = tokenizer.TokenStream.TokenType;
 
 pub const storyStartLabel = "@__STORY_START__";
 pub const storyEndLabel = "@__STORY_END__";
+const assert = std.debug.assert;
 
 pub const Node = struct {
     id: usize = 0,
@@ -62,7 +63,6 @@ pub const NodeString = struct {
         };
 
         _ = try rv.string.appendSlice(text);
-
         return rv;
     }
 
@@ -130,16 +130,25 @@ const BranchNode = struct {
 const StoryNodes = struct {
     instances: ArrayList(Node),
     textContent: ArrayList(NodeString),
+
     directives: AutoHashMap(Node, NodeDirective),
     speakerName: AutoHashMap(Node, NodeString),
     conditionalBlock: AutoHashMap(Node, BranchNode),
     choices: AutoHashMap(Node, ArrayList(Node)),
     nextNode: AutoHashMap(Node, Node),
+    explicitLink: AutoHashMap(Node, void),
     labels: std.StringHashMap(Node),
 
     const Self = @This();
 
+    pub fn getNullNode(self: Self) Node
+    {
+        return self.instances.items[0];
+    }
+
     pub fn init(allocator: std.mem.Allocator) Self {
+        // should actually group nextNode, explicitLinks and all future link based data into an enum or struct.
+        // that's a pretty important refactor we should do 
         var rv = Self{
             .instances = ArrayList(Node).initCapacity(allocator, 0xffff) catch unreachable,
             .textContent = ArrayList(NodeString).initCapacity(allocator, 0xffff) catch unreachable,
@@ -149,6 +158,7 @@ const StoryNodes = struct {
             .labels = std.StringHashMap(Node).init(allocator),
             .directives = AutoHashMap(Node, NodeDirective).init(allocator),
             .conditionalBlock = AutoHashMap(Node, BranchNode).init(allocator),
+            .explicitLink = std.AutoHashMap(Node, void).init(allocator),
         };
         var node = rv.newNodeWithContent("@__STORY_END__", allocator) catch unreachable;
         rv.setLabel(node, "@__STORY_END__") catch unreachable;
@@ -158,6 +168,7 @@ const StoryNodes = struct {
     pub fn deinit(self: *Self) void {
         self.instances.deinit();
         self.directives.deinit();
+        self.explicitLink.deinit();
         self.conditionalBlock.deinit();
         {
             var i: usize = 0;
@@ -206,7 +217,6 @@ const StoryNodes = struct {
     }
 
     fn newDirectiveNodeFromUtf8(self: *Self, source: []const []const u8, alloc: std.mem.Allocator) !Node {
-
         // you have access to start and end window here.
         var node = try self.newNodeWithContent("UNKNOWN DIRECTIVE", alloc);
         var directive = NodeDirective.fromUtf8Tokens(source, alloc);
@@ -237,6 +247,7 @@ const StoryNodes = struct {
     pub fn setLinkByLabel(self: *Self, id: Node, label: []const u8) !Node {
         var next = self.findNodeByLabel(label) orelse return StoryNodesError.InstancesNotExistError;
         try self.nextNode.put(id, next);
+        try self.explicitLink.put(id, .{});
         return next;
     }
 
@@ -260,6 +271,18 @@ const StoryNodes = struct {
         var value = try self.choices.getOrPut(node);
         value.value_ptr.* = try ArrayList(Node).initCapacity(alloc, choices.len);
         try value.value_ptr.appendSlice(choices);
+    }
+
+    pub fn addChoiceByNode(self: *Self, node: Node, choice: Node, alloc: std.mem.Allocator) !void {
+        if(!self.choices.contains(node))
+        {
+            var value = try self.choices.getOrPut(node);
+            value.value_ptr.* = ArrayList(Node).init(alloc);
+        }
+        {
+            var value = try self.choices.getOrPut(node);
+            try value.value_ptr.append(choice);
+        }
     }
 
     pub fn addSpeaker(self: *Self, node: Node, speaker: NodeString) !void {
@@ -333,12 +356,13 @@ pub const Interactor = struct {
             if (self.isRecording) {
                 try self.history.append(self.node);
             }
-            if (story.nextNode.contains(self.node)) {
-                self.node = story.nextNode.get(self.node).?;
-            } else if (story.choices.contains(self.node)) {
+            if (story.choices.contains(self.node)) {
                 self.node = story.choices.get(self.node).?.items[iter[currentChoiceIndex]];
                 currentChoiceIndex += 1;
             }
+            else if (story.nextNode.contains(self.node)) {
+                self.node = story.nextNode.get(self.node).?;
+            }  
         }
 
         if (self.isRecording) {
@@ -347,10 +371,192 @@ pub const Interactor = struct {
     }
 };
 
-const ScopeType = enum {
-    LinearScope,
-    ChoiceScope,
-    ConditionalScope,
+fn matchFunctionCallGeneric(slice: []const TokenType, data: anytype, functionName: []const u8) bool {
+    if (slice.len < 4) return false;
+
+    if (data.len != slice.len) {
+        std.debug.print("something is really wrong\n", .{});
+        return false;
+    }
+
+    if (!std.mem.eql(u8, data[1], functionName)) return false;
+
+    if (slice[0] == TokenType.AT and
+        slice[1] == TokenType.LABEL and
+        slice[2] == TokenType.L_PAREN and
+        slice[slice.len - 1] == TokenType.R_PAREN)
+    {
+        return true;
+    }
+
+    return false;
+}
+
+// checks if a sequence of tokens matches the @set(...) directive
+fn tokMatchSet(slice: []const TokenType, data: []const []const u8) bool {
+    return matchFunctionCallGeneric(slice, data, "set");
+}
+
+fn tokMatchEnd(slice: []const TokenType, data: anytype) bool {
+    if (slice.len < 2) return false;
+    if (slice[0] != TokenType.AT) return false;
+    if (slice[1] != TokenType.LABEL) return false;
+    if (data.len != slice.len) {
+        std.debug.print("something is really wrong\n", .{});
+        return false;
+    }
+
+    if (!std.mem.eql(u8, data[1], "end")) return false;
+
+    return true;
+}
+
+fn tokMatchGoto(slice: []const TokenType, data: anytype) bool {
+    if (slice.len < 3) return false;
+    if (slice[0] != TokenType.AT) return false;
+    if (slice[slice.len - 1] != TokenType.LABEL) return false;
+    if (data.len != slice.len) {
+        std.debug.print("something is really wrong\n", .{});
+        return false;
+    }
+
+    if (!std.mem.eql(u8, data[1], "goto")) return false;
+
+    return true;
+}
+
+fn tokMatchIf(slice: []const TokenType, data: anytype) bool {
+    return matchFunctionCallGeneric(slice, data, "if");
+}
+
+fn tokMatchElif(slice: []const TokenType, data: anytype) bool {
+    return matchFunctionCallGeneric(slice, data, "elif");
+}
+
+fn tokMatchVarsBlock(slice: []const TokenType, data: anytype) bool {
+    return matchFunctionCallGeneric(slice, data, "vars");
+}
+
+fn tokMatchElse(slice: []const TokenType, data: anytype) bool {
+    if (slice.len < 2) return false;
+
+    if (data.len != slice.len) {
+        std.debug.print("something is really wrong\n", .{});
+        return false;
+    }
+
+    if (!std.mem.eql(u8, data[1], "else")) return false;
+
+    if (slice[0] == TokenType.AT and
+        slice[1] == TokenType.LABEL)
+    {
+        return true;
+    }
+
+    return false;
+}
+
+fn tokMatchGenericDirective(slice: []const TokenType) bool {
+    if (slice.len < 4) return false;
+
+    if (slice[0] == TokenType.AT and
+        slice[1] == TokenType.LABEL and
+        slice[2] == TokenType.L_PAREN and
+        slice[slice.len - 1] == TokenType.R_PAREN)
+    {
+        return true;
+    }
+
+    return false;
+}
+
+fn tokMatchTabSpace(slice: []const TokenType, data: anytype) bool {
+    if (slice.len < 4) return false;
+    var i: u32 = 0;
+    while (i < slice.len) {
+        if ((slice[i] != TokenType.SPACE) or (data[i][0] != ' ')) {
+            if (i % 4 != 0)
+                std.debug.print("!! inconsistent tabbing, todo. cause some errors here\n", .{});
+            return false;
+        }
+        i += 1;
+    }
+    return true;
+}
+
+fn tokMatchDialogueWithSpeaker(slice: []const TokenType) bool {
+    if (slice.len < 3) return false;
+
+    if ((slice[0] == TokenType.LABEL or slice[0] == TokenType.SPEAKERSIGN) and
+        slice[1] == TokenType.COLON and
+        slice[2] == TokenType.STORY_TEXT)
+    {
+        return true;
+    }
+
+    return false;
+}
+
+fn tokMatchDialogueContinuation(slice: []const TokenType) bool {
+    if (slice.len < 2) return false;
+
+    if (slice[0] == TokenType.COLON and
+        slice[1] == TokenType.STORY_TEXT)
+    {
+        return true;
+    }
+
+    return false;
+}
+
+fn tokMatchComment(slice: []const TokenType) bool {
+    if (slice.len < 2) return false;
+
+    if (slice[0] == TokenType.HASHTAG and
+        slice[1] == TokenType.COMMENT)
+    {
+        return true;
+    }
+
+    return false;
+}
+
+fn tokMatchLabelDeclare(slice: []const TokenType) bool {
+    if (slice.len < 3) return false;
+
+    if (slice[0] == TokenType.L_SQBRACK and
+        slice[1] == TokenType.LABEL and
+        slice[2] == TokenType.R_SQBRACK)
+    {
+        return true;
+    }
+
+    return false;
+}
+
+fn tokMatchDialogueChoice(slice: []const TokenType) bool {
+    if (slice.len < 2) return false;
+
+    var searchSlice = slice;
+
+    if (searchSlice[0] == TokenType.LABEL) {
+        searchSlice = slice[1..];
+    }
+
+    if (searchSlice[0] == TokenType.R_ANGLE and searchSlice[searchSlice.len - 1] == TokenType.STORY_TEXT) {
+        return true;
+    }
+
+    return false;
+}
+
+pub const DelcarativeParser = struct {
+    toks: *const TokenStream,
+
+    pub fn ParseTokStream(toks: TokenStream) !void {
+        var self = .{toks};
+        _ = self;
+    }
 };
 
 pub const NodeParser = struct {
@@ -360,49 +566,66 @@ pub const NodeParser = struct {
         endIndex: usize = 1,
     };
 
-    const FinishParams = struct {
-        shouldLinkToLast: bool = true,
-    };
+    const NodeLinkingRules = struct {
+        node: Node,
+        tabLevel: usize, 
+        label: ?[]const u8 = null,
+        explicit_goto: ?Node = null, 
+        typeInfo: union(enum)
+        {
+            linear : struct {
+                shouldLinkToLast: bool = true,
+                lastNode: Node,
+            },
+            choice: struct {
+            }
+        },
+        
+        pub fn displayPretty(self: NodeLinkingRules) void
+        {
+            if(self.node.id == 0) 
+            {
+                std.debug.print("node: NULL NODE \n", .{});
+                return;
+            }
+            std.debug.print("node: {d} t={d} ", .{self.node.id, self.tabLevel});
+            if(self.label) |label| {
+                std.debug.print("->[{s}]", .{label});
+            }
+            if(self.explicit_goto) |goto| {
+                std.debug.print("->[ID: {d}]", .{goto});
+            }
 
-
-    const ParseScope = struct {
-        parentScope: usize,
-        tabLevel: usize,
-        childScopes: ArrayList(usize),
-        firstNodeInScope: Node,
-        lastNodeInScope: Node,
-        childLeafNodes: ArrayList(Node),
-        scopeType: ScopeType = ScopeType.LinearScope,
-
-        pub fn deinit(self: *ParseScope) void {
-            self.childScopes.deinit();
-            self.childLeafNodes.deinit();
+            switch( self.typeInfo )
+            {
+                .linear => |info| {
+                    if(info.shouldLinkToLast)
+                    {
+                        std.debug.print(" comes from : {d}", .{info.lastNode.id});
+                    }
+                },
+                .choice => |info|
+                {
+                    std.debug.print(" choice node", .{});
+                    _ = info;
+                }
+            }
+            std.debug.print("\n", .{});
         }
     };
 
-    pub fn MakeScope(
-        parentScopeId: usize,
-        tabLevel: usize,
-        firstNode: Node,
-        alloc: std.mem.Allocator,
-    ) ParseScope {
-        var self = ParseScope{
-            .firstNodeInScope = firstNode,
-            .lastNodeInScope = firstNode,
-            .parentScope = parentScopeId,
-            .childScopes = ArrayList(usize).init(alloc),
-            .childLeafNodes = ArrayList(Node).init(alloc),
-            .tabLevel = tabLevel,
-            .scopeType = ScopeType.ChoiceScope,
+    fn MakeLinkingRules(self: *Self, node: Node) NodeLinkingRules{
+        _ = self;
+        return NodeLinkingRules{
+            .node = node,
+            .tabLevel = self.tabLevel,
+            .typeInfo = .{.linear = .{.lastNode = self.lastNode}},
         };
-
-        return self;
     }
 
     tokenStream: TokenStream,
     isParsing: bool = true,
     tabLevel: usize = 0,
-    newLining: bool = false,
     lineNumber: usize = 1,
     story: StoryNodes,
     currentTokenWindow: TokenWindow = .{},
@@ -411,96 +634,14 @@ pub const NodeParser = struct {
     lastLabel: []const u8,
     hasLastLabel: bool = false,
     isNewLining: bool = true,
-    currentChoicesTabLevel: usize = 0,
-    scopes: ArrayList(ParseScope),
-    currentScopeId: usize = 0,
-
-    pub fn pushScope(
-        self: *Self,
-        scope: ParseScope,
-    ) !void {
-        // Ids are assigned as position in memory
-        try self.scopes.append(scope);
-        try self.scopes.items[scope.parentScope].childScopes.append(self.currentScopeId);
-        self.currentScopeId = self.scopes.items.len - 1;
-    }
-
-    // probably not use this
-    pub fn addParallelScope(self: *Self, node: Node, alloc: std.mem.Allocator) !void {
-        var currentScope = self.scopes.items[self.currentScopeId];
-        var parentScope = currentScope.parentScope;
-        try self.pushScope(NodeParser.MakeScope(parentScope, self.tabLevel, node, alloc));
-    }
-
-    pub fn backupScope(self: *Self, count: usize) !void {
-        _ = self;
-        _ = count;
-    }
-
-    pub fn finishScope(self: *Self) !void {
-        var scope = self.scopes.items[self.currentScopeId];
-        // printout first and last nodes for each scope until we get back to parent.
-        var parentId = scope.parentScope;
-        std.debug.print("Starting new scope collapse closing to parent: {d} currentScopeId {d}\n", .{ parentId, self.currentScopeId });
-        for (self.scopes.items[parentId + 1 ..]) |scopeToClose, i| {
-            var len = self.scopes.items.len;
-            std.debug.print(
-                "closing scope parent:{d} scopeId:{d} tablevel:{d}\n",
-                .{
-                    parentId,
-                    len - (i + 1),
-                    scopeToClose.tabLevel,
-                },
-            );
-
-            std.debug.print("tagname: {s}\n", .{@tagName(scopeToClose.scopeType)});
-            if (scopeToClose.scopeType == ScopeType.ChoiceScope or scopeToClose.scopeType == ScopeType.ConditionalScope)
-            {
-                if(scopeToClose.childLeafNodes.items.len > 0)
-                {
-                    for(scopeToClose.childLeafNodes.items) |leafChild|
-                    {
-                        try self.scopes.items[parentId].childLeafNodes.append(leafChild);
-                    }
-                }
-                else 
-                {
-                    try self.scopes.items[parentId].childLeafNodes.append(scopeToClose.lastNodeInScope);
-                }
-            }
-        }
-        var i: usize = self.scopes.items.len - 1;
-        while (i > parentId) : (i -= 1) {
-            var scopeToClose = self.scopes.pop();
-            scopeToClose.deinit();
-        }
-        self.currentScopeId = parentId;
-        std.debug.print("currentScopeId {d}\n", .{self.currentScopeId});
-    }
-
-    fn startDialogueChoice(self: *Self, alloc: std.mem.Allocator) !void {
-        self.currentChoicesTabLevel = self.tabLevel;
-        self.currentNodeForChoiceEval = self.lastNode;
-
-        std.debug.print("starting evaluation for {s}\n", .{self.currentNodeForChoiceEval});
-        if (!self.story.choices.contains(self.currentNodeForChoiceEval)) {
-            try self.story.choices.put(self.currentNodeForChoiceEval, ArrayList(Node).init(alloc));
-        }
-
-        if (self.story.choices.getEntry(self.currentNodeForChoiceEval)) |e| {
-            e.value_ptr.clearAndFree();
-        }
-    }
+    nodeLinkingRules: ArrayList(NodeLinkingRules),
 
     fn addCurrentDialogueChoiceFromUtf8Content(self: *Self, choiceContent: []const u8, alloc: std.mem.Allocator) !void {
         var node = try self.story.newNodeWithContent(choiceContent, alloc);
-        // try self.currentChoices.append(node);
-
-        if (self.story.choices.getEntry(self.currentNodeForChoiceEval)) |e| {
-            try e.value_ptr.append(node);
-            std.debug.print("{s} ->> {d} has this number of choices: {d}\n", .{ self.currentNodeForChoiceEval, node.id, e.value_ptr.*.items.len });
-            try self.finishCreatingNode(node, FinishParams{ .shouldLinkToLast = false });
-        }
+        var rules =  self.MakeLinkingRules(node);
+        rules.typeInfo = .{.choice = .{}};
+        try self.finishCreatingNode(node, rules);
+        _ = alloc;
     }
 
     fn matchFunctionCallGeneric(slice: []const TokenType, data: anytype, functionName: []const u8) bool {
@@ -524,215 +665,190 @@ pub const NodeParser = struct {
         return false;
     }
 
-    // checks if a sequence of tokens matches the @set(...) directive
-    fn tokMatchSet(slice: []const TokenType, data: []const []const u8) bool {
-        return matchFunctionCallGeneric(slice, data, "set");
-    }
+    fn finishCreatingNode(self: *Self, node: Node, params: NodeLinkingRules) !void 
+    {
+        self.lastNode = node;
+        _ = params;
+        try self.nodeLinkingRules.append(params);
 
-    fn tokMatchEnd(slice: []const TokenType, data: anytype) bool {
-        if (slice.len < 2) return false;
-        if (slice[0] != TokenType.AT) return false;
-        if (slice[1] != TokenType.LABEL) return false;
-        if (data.len != slice.len) {
-            std.debug.print("something is really wrong\n", .{});
-            return false;
-        }
-
-        if (!std.mem.eql(u8, data[1], "end")) return false;
-
-        return true;
-    }
-
-    fn tokMatchGoto(slice: []const TokenType, data: anytype) bool {
-        if (slice.len < 3) return false;
-        if (slice[0] != TokenType.AT) return false;
-        if (slice[slice.len - 1] != TokenType.LABEL) return false;
-        if (data.len != slice.len) {
-            std.debug.print("something is really wrong\n", .{});
-            return false;
-        }
-
-        if (!std.mem.eql(u8, data[1], "goto")) return false;
-
-        return true;
-    }
-
-    fn tokMatchIf(slice: []const TokenType, data: anytype) bool {
-        return matchFunctionCallGeneric(slice, data, "if");
-    }
-
-    fn tokMatchElif(slice: []const TokenType, data: anytype) bool {
-        return matchFunctionCallGeneric(slice, data, "elif");
-    }
-
-    fn tokMatchVarsBlock(slice: []const TokenType, data: anytype) bool {
-        return matchFunctionCallGeneric(slice, data, "vars");
-    }
-
-    fn tokMatchElse(slice: []const TokenType, data: anytype) bool {
-        if (slice.len < 2) return false;
-
-        if (data.len != slice.len) {
-            std.debug.print("something is really wrong\n", .{});
-            return false;
-        }
-
-        if (!std.mem.eql(u8, data[1], "else")) return false;
-
-        if (slice[0] == TokenType.AT and
-            slice[1] == TokenType.LABEL)
-        {
-            return true;
-        }
-
-        return false;
-    }
-
-    fn tokMatchGenericDirective(slice: []const TokenType) bool {
-        if (slice.len < 4) return false;
-
-        if (slice[0] == TokenType.AT and
-            slice[1] == TokenType.LABEL and
-            slice[2] == TokenType.L_PAREN and
-            slice[slice.len - 1] == TokenType.R_PAREN)
-        {
-            return true;
-        }
-
-        return false;
-    }
-
-    fn tokMatchTabSpace(slice: []const TokenType, data: anytype) bool {
-        if (slice.len < 4) return false;
-        var i: u32 = 0;
-        while (i < slice.len) {
-            if ((slice[i] != TokenType.SPACE) or (data[i][0] != ' ')) {
-                if (i % 4 != 0)
-                    std.debug.print("!! inconsistent tabbing, todo. cause some errors here\n", .{});
-                return false;
-            }
-            i += 1;
-        }
-        return true;
-    }
-
-    fn tokMatchDialogueWithSpeaker(slice: []const TokenType) bool {
-        if (slice.len < 3) return false;
-
-        if ((slice[0] == TokenType.LABEL or slice[0] == TokenType.SPEAKERSIGN) and
-            slice[1] == TokenType.COLON and
-            slice[2] == TokenType.STORY_TEXT)
-        {
-            return true;
-        }
-
-        return false;
-    }
-
-    fn tokMatchDialogueContinuation(slice: []const TokenType) bool {
-        if (slice.len < 2) return false;
-
-        if (slice[0] == TokenType.COLON and
-            slice[1] == TokenType.STORY_TEXT)
-        {
-            return true;
-        }
-
-        return false;
-    }
-
-    fn tokMatchComment(slice: []const TokenType) bool {
-        if (slice.len < 2) return false;
-
-        if (slice[0] == TokenType.HASHTAG and
-            slice[1] == TokenType.COMMENT)
-        {
-            return true;
-        }
-
-        return false;
-    }
-
-    fn tokMatchLabelDeclare(slice: []const TokenType) bool {
-        if (slice.len < 3) return false;
-
-        if (slice[0] == TokenType.L_SQBRACK and
-            slice[1] == TokenType.LABEL and
-            slice[2] == TokenType.R_SQBRACK)
-        {
-            return true;
-        }
-
-        return false;
-    }
-
-    fn tokMatchDialogueChoice(slice: []const TokenType) bool {
-        if (slice.len < 2) return false;
-
-        var searchSlice = slice;
-
-        if (searchSlice[0] == TokenType.LABEL) {
-            searchSlice = slice[1..];
-        }
-
-        if (searchSlice[0] == TokenType.R_ANGLE and searchSlice[searchSlice.len - 1] == TokenType.STORY_TEXT) {
-            return true;
-        }
-
-        return false;
-    }
-
-    fn finishCreatingNode(self: *Self, node: Node, params: FinishParams) !void {
-        if (self.lastNode.id > 0 and !self.story.nextNode.contains(self.lastNode)) {
-            try self.story.setLink(self.lastNode, node);
-        }
-
-        if (self.hasLastLabel and params.shouldLinkToLast) {
+        // handle linking
+        if (self.hasLastLabel) {
             self.hasLastLabel = false;
             try self.story.setLabel(node, self.lastLabel);
         }
-
-        var currentScope = self.scopes.items[self.currentScopeId];
-        // scopetabbing here
-        if(self.tabLevel)
-        {
-
-        }
-
-        self.lastNode = node;
     }
 
     fn deinit(self: *Self) void {
         // we dont release the storyNodes
         self.tokenStream.deinit();
+        self.nodeLinkingRules.deinit();
 
-        var i: usize = 0;
-        while (i < self.scopes.items.len) {
-            self.scopes.items[i].deinit();
-            i += 1;
-        }
-
-        self.scopes.deinit();
     }
 
     pub fn MakeParser(source: []const u8, alloc: std.mem.Allocator) !Self {
         var rv = Self{
             .tokenStream = try TokenStream.MakeTokens(source, alloc),
             .story = StoryNodes.init(alloc),
+            .nodeLinkingRules = ArrayList(NodeLinkingRules).init(alloc),
             .lastLabel = "",
             .hasLastLabel = false,
-            .scopes = ArrayList(ParseScope).init(alloc),
         };
 
-        try rv.scopes.append(.{
-            .tabLevel = 0,
-            .firstNodeInScope = .{},
-            .lastNodeInScope = .{},
-            .parentScope = 0,
-            .childScopes = ArrayList(usize).init(alloc),
-            .childLeafNodes = ArrayList(Node).init(alloc),
-        });
+        try rv.nodeLinkingRules.append(rv.MakeLinkingRules(.{}));
         return rv;
+    }
+
+    const TabScope = struct {
+        leafNodes: ArrayList(Node),
+        ownerNode: Node,
+
+        pub fn addNewNode(self: *TabScope, node: Node) !void
+        {
+            try self.leafNodes.append(node);
+        }
+        pub fn joinScope(self: *TabScope, other: *TabScope) !void
+        {
+            try other.leafNodes.appendSlice(self.leafNodes.items);
+        }
+        pub fn init(node:Node, alloc: std.mem.Allocator) TabScope {
+            return .{.leafNodes = ArrayList(Node).init(alloc), .ownerNode = node };
+        }
+        pub fn deinit(self: *TabScope)void{
+            self.leafNodes.deinit();
+        }
+        pub fn deinitAllScopes(scopes:*ArrayList(TabScope)) void
+        {
+            var i: usize = 0;
+            while(i < scopes.items.len )
+            {
+                scopes.items[i].deinit();
+                i += 1;
+            }
+            scopes.deinit();
+        }
+    };
+
+    pub fn LinkNodes(self: *Self, alloc: std.mem.Allocator) !void {
+        assert(self.nodeLinkingRules.items.len == self.story.instances.items.len);
+
+        // first pass, link all linear nodes and choices
+        {
+            var i: usize = 0;
+            while(i < self.nodeLinkingRules.items.len)
+            {
+                const rule = self.nodeLinkingRules.items[i];
+                // rule.displayPretty();
+                switch(rule.typeInfo)
+                {
+                    .linear => |info| {
+                        if(!self.story.nextNode.contains(info.lastNode))
+                        {
+                            try self.story.setLink(info.lastNode, rule.node);
+                        }
+                    },
+                    .choice => {
+
+                    }
+                }
+
+                if(rule.label) |label|
+                {
+                    std.debug.print("goto from {d} -> {s}\n", .{rule.node, label});
+                    _ = try self.story.setLinkByLabel(rule.node, label);
+                }
+                else if(rule.explicit_goto) |goto|
+                {
+                    _ = try self.story.setLink(rule.node, goto);
+                }
+
+                // std.debug.print("{s} -> {s}\n", .{rule.node, self.story.nextNode.get(rule.node)});
+                i += 1;
+            }
+        }
+
+        // second pass, collapse blocks based on tabscoping
+        var scopes = ArrayList(TabScope).init(alloc);
+        try scopes.append(TabScope.init(.{}, alloc));
+        defer TabScope.deinitAllScopes(&scopes);
+
+        std.debug.print("\n\n", .{});
+        {
+            var i: usize = 0;
+            while(i < self.nodeLinkingRules.items.len)
+            {
+                const rule = self.nodeLinkingRules.items[i];
+                // std.debug.print("STATE {s} -> {s}\n", .{rule.node, self.story.nextNode.get(rule.node)});
+                if((rule.tabLevel + 1) == scopes.items.len + 1) {
+                    var newScope = TabScope.init(self.nodeLinkingRules.items[i-1].node,alloc);
+                    try scopes.append(newScope);
+                    switch(rule.typeInfo)
+                    {
+                        .linear => {
+                            if(!self.story.nextNode.contains(rule.node))
+                            {
+                                // this is a leaf node. add it to the scope leaf nodes
+                                // std.debug.print("adding leaf node {s}\n", .{rule.node});
+                                try scopes.items[scopes.items.len - 1].addNewNode(rule.node);
+                            }
+                        },
+                        .choice => {
+                            try self.story.addChoiceByNode(scopes.items[scopes.items.len - 1].ownerNode, rule.node, alloc);
+                        }
+                    }
+                }
+                else if((rule.tabLevel + 1) < scopes.items.len) {
+                    var popCount: usize = scopes.items.len - (rule.tabLevel + 1);
+                    while(popCount > 0)
+                    {
+                        var scope = scopes.pop();
+                        try scope.joinScope(&scopes.items[scopes.items.len - 1]);
+                        scope.deinit();
+                        popCount -= 1;
+                    }
+                    // std.debug.print("leafcount: {d} {d}\n", .{ i, scopes.items[scopes.items.len - 1].leafNodes.items.len});
+                    
+                    switch(rule.typeInfo)
+                    {
+                        .linear => {
+                            for(scopes.items[scopes.items.len - 1].leafNodes.items) |fromNode|
+                            {
+                                if(!self.story.nextNode.contains(fromNode))
+                                {
+                                    // std.debug.print("SETLINK {s} -> {s}\n", .{fromNode, rule.node});
+                                    try self.story.setLink(fromNode, rule.node);
+                                }
+                            }
+                            scopes.items[scopes.items.len - 1].leafNodes.clearAndFree();
+                        },
+                        .choice => {
+                            try self.story.addChoiceByNode(scopes.items[scopes.items.len - 1].ownerNode, rule.node, alloc);
+                        }
+                    }
+                }
+                else if((rule.tabLevel + 1) > scopes.items.len + 1){
+                    // std.debug.print("{d} {d}\n", .{rule.tabLevel, scopes.items.len});
+                    try parserPanic(ParserError.GeneralParserError, "Inconsistent tab level \n");
+                }
+                else 
+                {
+                    switch(rule.typeInfo)
+                    {
+                        .linear => {
+                            if(!self.story.nextNode.contains(rule.node))
+                            {
+                                // this is a leaf node. add it to the scope leaf nodes
+                                // std.debug.print("adding leaf node {s}\n", .{rule.node});
+                                try scopes.items[scopes.items.len - 1].addNewNode(rule.node);
+                            }
+                        },
+                        .choice => {
+                            try self.story.addChoiceByNode(scopes.items[scopes.items.len - 1].ownerNode, rule.node, alloc);
+                        }
+                    }
+                }
+                i += 1;
+            }
+        }
     }
 
     pub fn DoParse(source: []const u8, alloc: std.mem.Allocator) !StoryNodes {
@@ -760,25 +876,28 @@ pub const NodeParser = struct {
                 std.debug.print("{d}: Set var\n", .{nodesCount});
                 const node = try self.story.newDirectiveNodeFromUtf8(dataSlice, alloc);
                 try self.story.setTextContentFromSlice(node, "Set var");
-                try self.finishCreatingNode(node, .{});
+                try self.finishCreatingNode(node, self.MakeLinkingRules(node));
                 shouldBreak = true;
             }
             if (!shouldBreak and tokMatchGoto(tokenTypeSlice, dataSlice)) {
-                std.debug.print("Goto\n", .{});
-                std.debug.print("{d} -> ", .{self.lastNode.id});
+                std.debug.print("{d}: Goto -> {s}\n", .{self.lastNode.id, dataSlice[dataSlice.len - 1]});
                 if (self.lastNode.id > 0) {
-                    var gotoNode = try self.story.setLinkByLabel(self.lastNode, dataSlice[dataSlice.len - 1]);
-                    std.debug.print("{d}\n", .{gotoNode});
+                    self.nodeLinkingRules.items[self.lastNode.id].label = dataSlice[dataSlice.len - 1];
                 } else {
                     return ParserError.GeneralParserError;
                 }
                 shouldBreak = true;
             }
             if (!shouldBreak and tokMatchEnd(tokenTypeSlice, dataSlice)) {
-                std.debug.print("end of story\n", .{});
                 if (self.lastNode.id > 0) {
-                    try self.story.setLink(self.lastNode, self.story.instances.items[0]);
+                    //try self.story.setLink(self.lastNode, self.story.instances.items[0]);
+
+                    std.debug.print("{d}: end of story\n", .{self.lastNode.id});
+                    self.nodeLinkingRules.items[self.lastNode.id].label = "@__STORY_END__";
+                } else {
+                    return ParserError.GeneralParserError;
                 }
+
                 shouldBreak = true;
             }
             if (!shouldBreak and tokMatchIf(tokenTypeSlice, dataSlice)) {
@@ -788,7 +907,7 @@ pub const NodeParser = struct {
                 const node = try self.story.newDirectiveNodeFromUtf8(dataSlice, alloc);
                 try self.story.conditionalBlock.put(node, .{});
                 try self.story.setTextContentFromSlice(node, "If block");
-                try self.finishCreatingNode(node, .{});
+                try self.finishCreatingNode(node, self.MakeLinkingRules(node));
                 shouldBreak = true;
             }
             if (!shouldBreak and tokMatchElif(tokenTypeSlice, dataSlice)) {
@@ -803,7 +922,7 @@ pub const NodeParser = struct {
                 nodesCount += 1;
                 const node = try self.story.newDirectiveNodeFromUtf8(dataSlice, alloc);
                 try self.story.setTextContentFromSlice(node, "Vars block");
-                try self.finishCreatingNode(node, .{});
+                try self.finishCreatingNode(node, self.MakeLinkingRules(node));
                 std.debug.print("{d}: Vars block\n", .{nodesCount});
                 shouldBreak = true;
             }
@@ -812,14 +931,12 @@ pub const NodeParser = struct {
                 std.debug.print("{d}: Generic Directive\n", .{nodesCount});
                 const node = try self.story.newDirectiveNodeFromUtf8(dataSlice, alloc);
                 try self.story.setTextContentFromSlice(node, "Generic Directive");
-                try self.finishCreatingNode(node, .{});
+                try self.finishCreatingNode(node, self.MakeLinkingRules(node));
                 shouldBreak = true;
             }
             if (!shouldBreak and tokMatchTabSpace(tokenTypeSlice, dataSlice)) {
                 std.debug.print("    ", .{});
-                if (self.isNewLining) {
-                    self.tabLevel += 1;
-                }
+                self.tabLevel += 1;
                 shouldBreak = true;
             }
             // inline space clause
@@ -855,8 +972,8 @@ pub const NodeParser = struct {
                     try self.story.addSpeaker(node, try NodeString.fromUtf8(dataSlice[0], alloc));
                 }
 
-                try self.finishCreatingNode(node, .{});
-                std.debug.print("{d}: story node\n", .{nodesCount});
+                try self.finishCreatingNode(node, self.MakeLinkingRules(node));
+                std.debug.print("{d}: story node {d}\n", .{nodesCount, self.tabLevel});
                 shouldBreak = true;
             }
             if (!shouldBreak and tokMatchDialogueContinuation(tokenTypeSlice)) {
@@ -868,17 +985,12 @@ pub const NodeParser = struct {
             if (!shouldBreak and tokMatchDialogueChoice(tokenTypeSlice)) {
                 nodesCount += 1;
                 std.debug.print("{d}: Choice Node\n", .{nodesCount});
-                if (self.currentNodeForChoiceEval.id == 0) {
-                    try self.startDialogueChoice(alloc);
-                }
                 try self.addCurrentDialogueChoiceFromUtf8Content(dataSlice[dataSlice.len - 1], alloc);
                 shouldBreak = true;
             }
             if (!shouldBreak and tokenTypeSlice[0] == TokenType.NEWLINE) {
-                // nodesCount += 1;
-                // std.debug.print("{d}: New Tab Level\n", .{nodesCount});
                 self.tabLevel = 0;
-                self.newLining = true;
+                self.isNewLining = true;
                 self.currentTokenWindow.startIndex += 1;
             }
             if (shouldBreak) {
@@ -897,6 +1009,8 @@ pub const NodeParser = struct {
                 self.isNewLining = false;
             }
         }
+
+        try self.LinkNodes(alloc);
         return self.story;
     }
 };
@@ -1027,6 +1141,25 @@ fn testChoicesList(story: StoryNodes, choicesList: []const usize, alloc: std.mem
     interactor.showHistory();
 }
 
+test "parsed simple storyNode" {
+    const alloc = std.testing.allocator;
+    var story = try NodeParser.DoParse(tokenizer.simplest_v1, std.testing.allocator);
+    defer story.deinit();
+    {
+        std.debug.print("\nPath 1 test -----\n", .{});
+        try testChoicesList(story, &.{0}, alloc);
+    }
+    {
+        std.debug.print("\nPath 2 test -----\n", .{});
+        try testChoicesList(story, &.{1}, alloc);
+    }
+    {
+        std.debug.print("\nPath 3 test -----\n", .{});
+        try testChoicesList(story, &.{ 2, 2, 1 }, alloc);
+    }
+}
+
+
 test "manual simple storyNode" {
     const alloc = std.testing.allocator;
     var story = try makeSimpleTestStory(alloc);
@@ -1048,143 +1181,4 @@ test "manual simple storyNode" {
 test "init and deinit" {
     var x = StoryNodes.init(std.testing.allocator);
     defer x.deinit();
-}
-
-test "scopetraversals" 
-{
-    var self = try NodeParser.MakeParser(
-        tokenizer.simplest_v1,
-        std.testing.allocator,
-    );
-    defer self.story.deinit();
-    defer self.deinit();
-    std.debug.print("\n", .{});
-    const tabLevels: []const usize = &.{ 0, 1, 1, 1, 0};
-    // xx a t=0 
-    // 00   > b  t=1
-    // 01     c    t=2
-    // 02       > 3 t=3
-    // 03     d  t=2
-    // 04       > e  t=3
-    // 05       > h
-    // 06     f  t=2 this collapse gives me two
-    // 07   > g t=1
-    // 08   > h t=1
-    // xx i t=0 collapsing here should give me 3 leaf nodes
-
-    const scopeTypes: []const ScopeType = &.{
-        ScopeType.LinearScope,
-        ScopeType.ChoiceScope,
-        ScopeType.ChoiceScope,
-        ScopeType.ChoiceScope,
-        ScopeType.LinearScope,
-    };
-
-    _ = scopeTypes;
-
-
-    for(tabLevels) |tabLevel, i| {
-        if(tabLevel > self.tabLevel)
-        {
-            if(tabLevel - self.tabLevel > 1)
-            {
-                std.debug.print("Unexpected indent level, indented too deep\n", .{});
-            }
-            var node = NodeParser.MakeScope(self.currentScopeId, tabLevel, Node{ .id = i }, std.testing.allocator);
-            node.scopeType = scopeTypes[i];
-            try self.pushScope( node );
-        }
-        else if(tabLevel < self.tabLevel)
-        {
-            var j = self.tabLevel - tabLevel;
-            while(j > 0 ) {
-                try self.finishScope();
-                std.debug.print("number of leaf nodes ( we expect something idk): {d}\n", .{self.scopes.items[self.currentScopeId].childLeafNodes.items.len});
-                j -= 1;
-            }
-        }
-        else{
-            const currentScope = self.scopes.items[self.currentScopeId];
-            var node = NodeParser.MakeScope(currentScope.parentScope, tabLevel, Node{ .id = i }, std.testing.allocator);
-            node.scopeType = scopeTypes[i];
-            try self.pushScope( node );
-        }
-        
-        self.tabLevel = tabLevel;
-    }
-
-    std.debug.print("number of leaf nodes ( we expect something idk): id={d} {d}\n", .{self.currentScopeId, self.scopes.items[self.currentScopeId].childLeafNodes.items.len});
-}
-
-test "scopeCrushing" {
-    var parser = try NodeParser.MakeParser(
-        tokenizer.simplest_v1,
-        std.testing.allocator,
-    );
-
-    defer parser.story.deinit();
-    defer parser.deinit();
-    std.debug.print("\n", .{});
-
-    const alloc = std.testing.allocator;
-    // 1
-    // 2
-    //   3
-    //     4
-    //     5
-    //     6
-    // 7
-
-    // last finish scope should close these guys
-    try parser.pushScope(
-        NodeParser.MakeScope(parser.currentScopeId, 1, Node{ .id = 2 }, std.testing.allocator),
-    );
-
-    // second finish scope should close these guys
-    try parser.pushScope(
-        NodeParser.MakeScope(parser.currentScopeId, 2, Node{ .id = 3 }, std.testing.allocator),
-    );
-
-    parser.tabLevel = 3;
-    // first finish scope should close these guys
-    try parser.pushScope(
-        NodeParser.MakeScope(parser.currentScopeId, 3, Node{ .id = 4 }, std.testing.allocator),
-    );
-
-    try parser.addParallelScope(Node{ .id = 5 }, alloc);
-    try parser.addParallelScope(Node{ .id = 6 }, alloc);
-
-    try parser.finishScope();
-
-    // try parser.pushScope(
-    //     NodeParser.MakeScope(parser.currentScopeId, 2, Node{ .id = 7 }, std.testing.allocator),
-    // );
-
-    try parser.addParallelScope(Node{ .id = 5 }, alloc);
-    try parser.addParallelScope(Node{ .id = 6 }, alloc);
-
-    try parser.finishScope();
-    try parser.finishScope();
-
-    std.debug.print("current scope id: {d}", .{parser.currentScopeId});
-    std.debug.assert(parser.currentScopeId == 0);
-    std.debug.assert(parser.scopes.items.len == 1);
-
-    // last finish scope should close these guys
-    try parser.pushScope(
-        NodeParser.MakeScope(parser.currentScopeId, 1, Node{ .id = 8 }, std.testing.allocator),
-    );
-
-    try parser.addParallelScope(Node{ .id = 2 }, alloc);
-    try parser.addParallelScope(Node{ .id = 2 }, alloc);
-
-    try parser.finishScope();
-
-    if (!(parser.currentScopeId == 0)) {
-        std.debug.print("current scope id: {d}", .{parser.currentScopeId});
-    }
-    std.debug.assert(parser.currentScopeId == 0);
-    std.debug.assert(parser.scopes.items.len == 1);
-
-    std.debug.print("WHOO\n", .{});
 }
