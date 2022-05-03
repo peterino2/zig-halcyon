@@ -1,7 +1,5 @@
 // - create a type database
-// - be able to create variables referencing the type database
-// - this goes into the facts database
-// - create and update interface.
+//
 
 const std = @import("std");
 const ArrayList = std.ArrayList;
@@ -27,31 +25,45 @@ pub fn MakeLabel(utf8: []const u8) Label {
     return Label.fromUtf8(utf8);
 }
 
-// These never get saved to a savefile
 pub const TypeRef = struct {
     id: usize,
 };
 
+pub const FactsError = error{
+    CompareAgainstBadRef,
+    InvalidTypeComparison,
+    InvalidType,
+};
+
+// Types can be inserted but not removed or updated.
 pub const TypeDatabaseEntry = union(enum) {
     const Self = @This();
 
-    const InnerType = struct { fieldName: Label, typeref: TypeRef };
+    const InnerType = struct {
+        fieldName: Label,
+        typeRef: TypeRef,
+    };
 
-    builtin: struct {
-        label: Label,
-    },
+    builtin: struct { label: Label },
     custom: struct {
         label: Label,
         innerTypesByLabel: StringHashMap(u32),
-        innerTypes: ArrayList(InnerType),
+        fields: ArrayList(InnerType),
+        defaultValues: ArrayList(FactValue),
     },
 
     pub fn deinit(self: *Self) void {
         switch (self.*) {
             .builtin => {},
             .custom => |_| {
-                self.custom.innerTypes.deinit();
+                self.custom.fields.deinit();
                 self.custom.innerTypesByLabel.deinit();
+                var i: usize = 0;
+                while (i < self.custom.defaultValues.items.len) {
+                    self.custom.defaultValues.items[i].deinit();
+                    i += 1;
+                }
+                self.custom.defaultValues.deinit();
             },
         }
     }
@@ -63,8 +75,8 @@ pub const TypeDatabaseEntry = union(enum) {
             },
             .custom => |t| {
                 std.debug.print("custom type: {s}\n", .{t.label.utf8});
-                for (t.innerTypes.items) |innerType| {
-                    const typeid = innerType.typeref.id;
+                for (t.fields.items) |innerType| {
+                    const typeid = innerType.typeRef.id;
                     var typeName: []const u8 = "";
                     switch (typedb.types.items[typeid]) {
                         .builtin => |builtin| {
@@ -74,7 +86,7 @@ pub const TypeDatabaseEntry = union(enum) {
                             typeName = custom.label.utf8;
                         },
                     }
-                    std.debug.print("    {s} ({d}): {s}\n", .{ innerType.fieldName.utf8, innerType.typeref.id, typeName });
+                    std.debug.print("    {s} ({d}): {s}\n", .{ innerType.fieldName.utf8, innerType.typeRef.id, typeName });
                 }
             },
         }
@@ -84,24 +96,29 @@ pub const TypeDatabaseEntry = union(enum) {
 
     pub fn newBuiltin(label: Label) !TypeDatabaseEntry {
         return TypeDatabaseEntry{
-            .builtin = .{
-                .label = label,
-            },
+            .builtin = .{ .label = label },
         };
     }
 
-    pub fn addChildType(self: *Self, fieldName: Label, typeref: TypeRef) !void {
+    pub fn addChildType(self: *Self, fieldName: Label, typeRef: TypeRef) !void {
         // todo: add checks to make sure that multiple fields don't collide
-        try self.custom.innerTypesByLabel.put(fieldName.utf8, @intCast(u32, self.custom.innerTypes.items.len));
-        try self.custom.innerTypes.append(.{ .fieldName = fieldName, .typeref = typeref });
+        try self.custom.innerTypesByLabel.put(fieldName.utf8, @intCast(u32, self.custom.fields.items.len));
+        try self.custom.fields.append(.{ .fieldName = fieldName, .typeRef = typeRef });
+    }
+
+    pub fn pushDefaultValue(self: *Self, value: FactValue) !void {
+        var newValueId = self.custom.defaultValues.items.len;
+        try self.custom.defaultValues.append(value);
+        _ = newValueId;
     }
 
     pub fn newCustomType(label: Label, alloc: std.mem.Allocator) TypeDatabaseEntry {
         return TypeDatabaseEntry{
             .custom = .{
                 .label = label,
-                .innerTypes = ArrayList(InnerType).init(alloc),
+                .fields = ArrayList(InnerType).init(alloc),
                 .innerTypesByLabel = StringHashMap(u32).init(alloc),
+                .defaultValues = ArrayList(FactValue).init(alloc),
             },
         };
     }
@@ -113,7 +130,7 @@ const BuiltinFactTypes = enum {
     string,
     integer,
     float,
-    typeref,
+    typeRef,
     ref,
     customType,
 };
@@ -139,7 +156,6 @@ pub const TypeDatabase = struct {
                 try self.types.append(entry);
             }
         }
-
         return self;
     }
 
@@ -159,12 +175,14 @@ pub const TypeDatabase = struct {
     }
 
     pub fn deinit(self: *Self) void {
-        var i: usize = 0;
-        while (i < self.types.items.len) {
-            self.types.items[i].deinit();
-            i += 1;
+        {
+            var i: usize = 0;
+            while (i < self.types.items.len) {
+                self.types.items[i].deinit();
+                i += 1;
+            }
+            self.types.deinit();
         }
-        self.types.deinit();
         self.typesByLabel.deinit();
     }
 };
@@ -175,12 +193,45 @@ pub const FactValue = union(BuiltinFactTypes) {
     string: ArrayList(u8),
     integer: i64,
     float: f64,
-    typeref: TypeRef,
+    typeRef: TypeRef,
     ref: usize,
     customType: struct {
-        typeref: TypeRef,
-        dataStore: []u8,
+        typeRef: TypeRef,
+        dataStore: ArrayList(FactValue),
     },
+
+    pub fn prettyPrintValue(self: @This()) void {
+        switch (self) {
+            ._BADTYPE => {
+                std.debug.print("INVALID_VALUE\n", .{});
+            },
+            .boolean => {
+                std.debug.print("boolean = {s}\n", .{self.boolean});
+            },
+            .string => {
+                std.debug.print("string = {s}\n", .{self.string.items});
+            },
+            .integer => {
+                std.debug.print("integer = {d}\n", .{self.integer});
+            },
+            .float => {
+                std.debug.print("float = {d}\n", .{self.float});
+            },
+            .typeRef => {
+                std.debug.print("typeRef.id = {d}\n", .{self.typeRef.id});
+            },
+            .ref => {
+                std.debug.print("ref = {d}\n", .{self.ref});
+            },
+            .customType => |data| {
+                std.debug.print("custom Type: typeRef.id = {d}\n", .{self.customType.typeRef.id});
+                for (data.dataStore.items) |value| {
+                    std.debug.print("  ", .{});
+                    value.prettyPrintValue();
+                }
+            },
+        }
+    }
 
     pub fn fromBool(boolean: bool) !@This() {
         return FactValue{ .boolean = boolean };
@@ -194,8 +245,8 @@ pub const FactValue = union(BuiltinFactTypes) {
         return FactValue{ .float = float };
     }
 
-    pub fn fromTypeRef(typeref: TypeRef) !@This() {
-        return FactValue{ .typeref = typeref };
+    pub fn fromTypeRef(typeRef: TypeRef) !@This() {
+        return FactValue{ .typeRef = typeRef };
     }
 
     pub fn fromRef(ref: usize) !@This() {
@@ -209,6 +260,66 @@ pub const FactValue = union(BuiltinFactTypes) {
         return f;
     }
 
+    pub fn fromCustomType(
+        typeDb: TypeDatabase,
+        typeRef: TypeRef,
+        initializerList: []FactValue,
+        alloc: std.mem.Allocator,
+    ) !FactValue {
+        var typeInfo = typeDb.types.items[typeRef.id];
+        // if(typeRef.id < BuiltinFactTypes.customType)
+        // {
+        //     switch(@intToEnum(BuiltinFactTypes, typeRef.id))
+        //     {
+        //         ._BADTYPE => {
+        //         },
+        //         .boolean => {
+        //         },
+        //         .string => {
+        //         },
+        //         .integer => {
+        //         },
+        //         .float => {
+        //         },
+        //         .typeRef => {
+        //         },
+        //         .ref => {
+        //         },
+        //         .customType => {
+        //         }
+        //     },
+        //     }
+        // }
+
+        var self = FactValue{
+            .customType = .{
+                .typeRef = typeRef,
+                .dataStore = ArrayList(FactValue).init(alloc),
+            },
+        };
+
+        // fill up values based on the initializerList, fill the remaining with default values.
+
+        try self.customType.dataStore.appendSlice(initializerList);
+
+        // create default values from TypeDb
+
+        var i: usize = self.customType.dataStore.items.len;
+
+        while (i < typeInfo.custom.defaultValues.items.len) {
+            try self.customType.dataStore.append(typeInfo.custom.defaultValues.items[i]);
+            i += 1;
+        }
+
+        // fill out the rest with defaults
+        while (i < typeInfo.custom.fields.items.len) {
+            // try self.customType.dataStore.append();
+            i += 1;
+        }
+
+        return self;
+    }
+
     pub fn deinit(self: *FactValue) void {
         switch (self.*) {
             .string => |string| {
@@ -218,13 +329,14 @@ pub const FactValue = union(BuiltinFactTypes) {
             .integer => {},
             .float => {},
             .ref => {},
-            .typeref => {},
+            .typeRef => {},
             .customType => {},
             ._BADTYPE => {},
         }
     }
 };
 
+// This is a variable which wraps a value
 pub const FactVar = struct {
     label: Label,
     data: FactValue,
@@ -239,7 +351,7 @@ pub const FactsDatabase = struct {
         for (self.vars.items) |x| {
             switch (x.data) {
                 ._BADTYPE => {},
-                .typeref => {},
+                .typeRef => {},
                 .ref => {},
                 .customType => {},
                 .boolean => {},
@@ -323,8 +435,12 @@ pub const FactsDatabase = struct {
                 .boolean => |data| {
                     return data == value.boolean;
                 },
-                ._BADTYPE => {},
-                .typeref => {},
+                ._BADTYPE => {
+                    return FactsError.CompareAgainstBadRef;
+                },
+                .typeRef => |data| {
+                    return data.id == value.typeRef.id;
+                },
                 .ref => {},
                 .customType => {},
                 .integer => |data| {
@@ -340,7 +456,6 @@ pub const FactsDatabase = struct {
                 },
             }
         }
-
         return false;
     }
 };
@@ -358,6 +473,9 @@ test "001-making-vars" {
     var typedb = try TypeDatabase.init(std.testing.allocator);
     defer typedb.deinit();
 
+    var dummyType = TypeDatabaseEntry.newCustomType(MakeLabel("myStruct2"), std.testing.allocator);
+    _ = try typedb.addNewType(dummyType);
+
     var newType = TypeDatabaseEntry.newCustomType(MakeLabel("myStruct"), std.testing.allocator);
     try newType.addChildType(MakeLabel("field_1"), typedb.getTypeByLabel(MakeLabel("boolean")));
     try newType.addChildType(MakeLabel("another_field"), typedb.getTypeByLabel(MakeLabel("boolean")));
@@ -365,6 +483,10 @@ test "001-making-vars" {
     try newType.addChildType(MakeLabel("field_2"), typedb.getTypeByLabel(MakeLabel("string")));
     try newType.addChildType(MakeLabel("field_3"), typedb.getTypeByLabel(MakeLabel("integer")));
     var ref = try typedb.addNewType(newType);
+
+    newType = TypeDatabaseEntry.newCustomType(MakeLabel("mySecondStruct"), std.testing.allocator);
+    try newType.addChildType(MakeLabel("field_1"), typedb.getTypeByLabel(MakeLabel("myStruct")));
+    _ = try typedb.addNewType(newType);
 
     try std.testing.expect(typedb.getTypeByLabel(MakeLabel("myStruct")).id == ref.id);
     // print out all types from the typeDatabase
@@ -394,8 +516,30 @@ test "001-making-vars" {
         comptime MakeLabel("testString"),
         testValue,
     )) == true);
+}
 
-    // print out all variables in the factsdb
+test "002-nested-anonymous-types" {
+    var typedb = try TypeDatabase.init(std.testing.allocator);
+    defer typedb.deinit();
+
+    var dummyType = TypeDatabaseEntry.newCustomType(MakeLabel("myStruct2"), std.testing.allocator);
+    _ = try typedb.addNewType(dummyType);
+
+    var newType = TypeDatabaseEntry.newCustomType(MakeLabel("myStruct"), std.testing.allocator);
+    try newType.addChildType(MakeLabel("field_1"), typedb.getTypeByLabel(MakeLabel("boolean")));
+    try newType.addChildType(MakeLabel("another_field"), typedb.getTypeByLabel(MakeLabel("boolean")));
+    try newType.addChildType(MakeLabel("bad_field"), typedb.getTypeByLabel(MakeLabel("some non existent type")));
+    try newType.addChildType(MakeLabel("field_2"), typedb.getTypeByLabel(MakeLabel("string")));
+    try newType.addChildType(MakeLabel("field_3"), typedb.getTypeByLabel(MakeLabel("integer")));
+    var ref = try typedb.addNewType(newType);
+
+    {
+        var single_level_factValue = try FactValue.fromCustomType(typedb, ref, &.{}, std.testing.allocator);
+        defer single_level_factValue.deinit();
+        single_level_factValue.prettyPrintValue();
+        _ = single_level_factValue;
+    }
+
 }
 
 test "000-TypeDatabase-simple" {
@@ -416,8 +560,4 @@ test "learning inline-for" {
             std.debug.print("{s}\n", .{huh.name});
         }
     }
-
-    // inline for (@typeInfo(BuiltinFactTypes).fields) |def| {
-    //     std.debug.print("{s}\n", .{@tagName(def)});
-    // }
 }

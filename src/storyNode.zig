@@ -1,7 +1,8 @@
 const std = @import("std");
+const tokenizer = @import("tokenizer.zig");
+const facts = @import("facts.zig");
 const ArrayList = std.ArrayList;
 const AutoHashMap = std.AutoHashMap;
-const tokenizer = @import("tokenizer.zig");
 const TokenStream = tokenizer.TokenStream;
 const TokenType = tokenizer.TokenStream.TokenType;
 
