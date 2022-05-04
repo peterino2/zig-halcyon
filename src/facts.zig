@@ -1,5 +1,8 @@
 // - create a type database
-//
+// - new value types to handle
+//      - arrays
+//      - enums
+//      - maps ( structs are like maps but better )
 
 const std = @import("std");
 const ArrayList = std.ArrayList;
@@ -49,7 +52,7 @@ pub const TypeDatabaseEntry = union(enum) {
         label: Label,
         innerTypesByLabel: StringHashMap(u32),
         fields: ArrayList(InnerType),
-        defaultValues: ArrayList(FactValue),
+        defaultValues: ArrayList(Initializer),
     },
 
     pub fn deinit(self: *Self) void {
@@ -60,7 +63,7 @@ pub const TypeDatabaseEntry = union(enum) {
                 self.custom.innerTypesByLabel.deinit();
                 var i: usize = 0;
                 while (i < self.custom.defaultValues.items.len) {
-                    self.custom.defaultValues.items[i].deinit();
+                    self.custom.defaultValues.items[i].value.deinit();
                     i += 1;
                 }
                 self.custom.defaultValues.deinit();
@@ -118,7 +121,7 @@ pub const TypeDatabaseEntry = union(enum) {
                 .label = label,
                 .fields = ArrayList(InnerType).init(alloc),
                 .innerTypesByLabel = StringHashMap(u32).init(alloc),
-                .defaultValues = ArrayList(FactValue).init(alloc),
+                .defaultValues = ArrayList(Initializer).init(alloc),
             },
         };
     }
@@ -150,7 +153,7 @@ pub const TypeDatabase = struct {
         inline for (@typeInfo(BuiltinFactTypes).Enum.fields) |huh| {
             if (@field(BuiltinFactTypes, huh.name) != BuiltinFactTypes.customType) {
                 var entry = try TypeDatabaseEntry.newBuiltin(comptime MakeLabel(huh.name));
-                entry.prettyPrint(self);
+                // entry.prettyPrint(self);
                 var newTypeRef: TypeRef = .{ .id = self.types.items.len };
                 try self.typesByLabel.put(entry.builtin.label.hash, newTypeRef);
                 try self.types.append(entry);
@@ -187,6 +190,89 @@ pub const TypeDatabase = struct {
     }
 };
 
+pub const Initializer = struct {
+    label: Label,
+    value: FactValue,
+};
+
+const interfaceFunctionNames = &.{
+    "copy",
+    "compare",
+};
+
+fn implement_func_for_tagged_union(
+    self: anytype,
+    comptime funcName: []const u8,
+    comptime returnType: type,
+    args: anytype,
+) returnType {
+    const Self = @TypeOf(self);
+    _ = Self;
+    _ = args;
+    inline for (@typeInfo(std.meta.Tag(Self)).Enum.fields) |field| {
+        if (@intToEnum(std.meta.Tag(Self), field.value) == self) {
+            if (@hasDecl(@TypeOf(@field(self, field.name)), funcName)) {
+                return @field(@field(self, field.name), funcName)(args);
+            }
+        }
+    }
+
+    unreachable;
+}
+
+pub const FactString = @import("fact_types/FactString.zig");
+
+pub const Fact = union(BuiltinFactTypes) {
+    _BADTYPE: struct {},
+    boolean: struct {
+        value: bool,
+
+        pub fn prettyPrint(self: @This(), _: anytype) void {
+            std.debug.print("{} \n", .{self.value});
+        }
+    },
+    string: FactString,
+    integer: struct { value: i64 },
+    float: struct { value: f64 },
+    typeRef: TypeRef,
+    ref: struct { value: usize },
+    customType: struct {
+        typeRef: TypeRef,
+        data: AutoHashMap(u32, Fact),
+    },
+
+    pub fn prettyPrint(self: @This()) void {
+        implement_func_for_tagged_union(self, "prettyPrint", void, .{});
+    }
+
+    pub fn compareEq(self: @This(), other: @This()) bool {
+        return implement_func_for_tagged_union(self, "compareEq", bool, other);
+    }
+
+    pub fn fromUtf8(value: []const u8, alloc: std.mem.Allocator) !@This() {
+        var f = Fact{ .string = .{ .value = ArrayList(u8).init(alloc) } };
+        try f.string.value.appendSlice(value);
+        return f;
+    }
+
+    pub fn asFactString(self: @This()) FactString {
+        return implement_func_for_tagged_union(self, "asFactString", FactString, .{});
+    }
+};
+
+test "010-testing-new-facts" {
+    std.debug.print("\n", .{});
+    var x = Fact{ .boolean = .{ .value = true } };
+
+    var y = try Fact.fromUtf8("testing", std.testing.allocator);
+    var y2 = try Fact.fromUtf8("testing", std.testing.allocator);
+
+    x.prettyPrint();
+    y.prettyPrint();
+    std.debug.print("\n\n", .{});
+    std.debug.print("testing: {}\n", .{y.compareEq(y2)});
+}
+
 pub const FactValue = union(BuiltinFactTypes) {
     _BADTYPE: struct {},
     boolean: bool,
@@ -197,16 +283,20 @@ pub const FactValue = union(BuiltinFactTypes) {
     ref: usize,
     customType: struct {
         typeRef: TypeRef,
-        dataStore: ArrayList(FactValue),
+        data: AutoHashMap(u32, FactValue),
     },
 
-    pub fn prettyPrintValue(self: @This()) void {
+    pub fn prettyPrintValue(self: @This(), typeDb: TypeDatabase) void {
+        self.prettyPrintValueInner(typeDb, 0);
+    }
+
+    pub fn prettyPrintValueInner(self: @This(), typeDb: TypeDatabase, depth: u32) void {
         switch (self) {
             ._BADTYPE => {
                 std.debug.print("INVALID_VALUE\n", .{});
             },
             .boolean => {
-                std.debug.print("boolean = {s}\n", .{self.boolean});
+                std.debug.print("boolean = {}\n", .{self.boolean});
             },
             .string => {
                 std.debug.print("string = {s}\n", .{self.string.items});
@@ -223,14 +313,47 @@ pub const FactValue = union(BuiltinFactTypes) {
             .ref => {
                 std.debug.print("ref = {d}\n", .{self.ref});
             },
-            .customType => |data| {
-                std.debug.print("custom Type: typeRef.id = {d}\n", .{self.customType.typeRef.id});
-                for (data.dataStore.items) |value| {
-                    std.debug.print("  ", .{});
-                    value.prettyPrintValue();
+            .customType => |custom| {
+                const typeName = typeDb.types.items[self.customType.typeRef.id].custom.label.utf8;
+                std.debug.print("struct {s} : typeRef.id = {d}\n", .{ typeName, self.customType.typeRef.id });
+
+                var iterator = custom.data.iterator();
+                while (iterator.next()) |entry| {
+                    var x = depth;
+                    while (x > 0) {
+                        std.debug.print("  ", .{});
+                        x -= 1;
+                    }
+                    std.debug.print("  key:{d} ", .{entry.key_ptr.*});
+                    entry.value_ptr.prettyPrintValueInner(typeDb, depth + 1);
                 }
             },
         }
+    }
+
+    pub fn deepCopy(self: @This(), alloc: std.mem.Allocator) !@This() {
+        var returnValue: FactValue = .{ ._BADTYPE = .{} };
+        _ = self;
+        _ = alloc;
+
+        // switch(self)
+        // {
+        //     ._BADTYPE, .boolean, .integer, .float, .typeRef, .ref => {
+        //         returnValue = self;
+        //     },
+        //     .string => {
+        //         returnValue.string = ArrayList(u8).init(alloc);
+        //         try returnValue.string.appendSlice(self.string.items);
+        //     },
+        //     .customType => {
+        //         try returnValue.customType = .{
+        //             .typeRef = self.customType.typeRef;
+        //             .data = AutoHashMap(u32, FactValue).init(alloc);
+        //         };
+        //     }
+        // }
+
+        return returnValue;
     }
 
     pub fn fromBool(boolean: bool) !@This() {
@@ -260,63 +383,118 @@ pub const FactValue = union(BuiltinFactTypes) {
         return f;
     }
 
-    pub fn fromCustomType(
-        typeDb: TypeDatabase,
+    pub fn makeFromTypeRef(
         typeRef: TypeRef,
-        initializerList: []FactValue,
+        typeDb: TypeDatabase,
         alloc: std.mem.Allocator,
-    ) !FactValue {
-        var typeInfo = typeDb.types.items[typeRef.id];
-        // if(typeRef.id < BuiltinFactTypes.customType)
-        // {
-        //     switch(@intToEnum(BuiltinFactTypes, typeRef.id))
-        //     {
-        //         ._BADTYPE => {
-        //         },
-        //         .boolean => {
-        //         },
-        //         .string => {
-        //         },
-        //         .integer => {
-        //         },
-        //         .float => {
-        //         },
-        //         .typeRef => {
-        //         },
-        //         .ref => {
-        //         },
-        //         .customType => {
-        //         }
-        //     },
-        //     }
-        // }
-
+    ) FactValue {
+        if (typeRef.id < @enumToInt(BuiltinFactTypes.customType)) {
+            switch (@intToEnum(BuiltinFactTypes, typeRef.id)) {
+                ._BADTYPE => {
+                    return FactValue{ ._BADTYPE = .{} };
+                },
+                .boolean => {
+                    return FactValue{ .boolean = false };
+                },
+                .string => {
+                    return FactValue.fromUtf8("", alloc) catch unreachable;
+                },
+                .integer => {
+                    return FactValue{ .integer = 0 };
+                },
+                .float => {
+                    return FactValue{ .float = 0.0 };
+                },
+                .typeRef => {
+                    return FactValue{ .typeRef = .{ .id = 0 } };
+                },
+                .ref => {
+                    return FactValue{ .ref = 0 };
+                },
+                .customType => {},
+            }
+        }
         var self = FactValue{
             .customType = .{
                 .typeRef = typeRef,
-                .dataStore = ArrayList(FactValue).init(alloc),
+                .data = AutoHashMap(u32, FactValue).init(alloc),
             },
         };
 
-        // fill up values based on the initializerList, fill the remaining with default values.
-
-        try self.customType.dataStore.appendSlice(initializerList);
-
-        // create default values from TypeDb
-
-        var i: usize = self.customType.dataStore.items.len;
-
-        while (i < typeInfo.custom.defaultValues.items.len) {
-            try self.customType.dataStore.append(typeInfo.custom.defaultValues.items[i]);
-            i += 1;
-        }
-
-        // fill out the rest with defaults
+        var typeInfo = typeDb.types.items[typeRef.id];
+        var i: usize = 0;
         while (i < typeInfo.custom.fields.items.len) {
-            // try self.customType.dataStore.append();
+            const innerType = typeInfo.custom.fields.items[i];
+            const newValue = FactValue.makeFromTypeRef(innerType.typeRef, typeDb, alloc);
+            self.customType.data.put(innerType.fieldName.hash, newValue) catch unreachable;
             i += 1;
         }
 
+        i = 0;
+        while (i < typeInfo.custom.defaultValues.items.len) {
+            const initializer = typeInfo.custom.defaultValues.items[i];
+            self.customType.data.put(initializer.label.hash, initializer.value) catch unreachable;
+            i += 1;
+        }
+
+        return self;
+    }
+
+    pub fn fromCustomType(
+        typeDb: TypeDatabase,
+        typeRef: TypeRef,
+        initializerList: []Initializer,
+        alloc: std.mem.Allocator,
+    ) !FactValue {
+        _ = typeDb;
+        _ = typeRef;
+        _ = initializerList;
+        _ = alloc;
+        var typeInfo = typeDb.types.items[typeRef.id];
+        var self = FactValue{
+            .customType = .{
+                .typeRef = typeRef,
+                .data = AutoHashMap(u32, FactValue).init(alloc),
+            },
+        };
+
+        {
+            var i: usize = 0;
+            while (i < typeInfo.custom.fields.items.len) {
+                const innerType = typeInfo.custom.fields.items[i];
+                const newValue = FactValue.makeFromTypeRef(innerType.typeRef, typeDb, alloc);
+                try self.customType.data.put(innerType.fieldName.hash, newValue);
+                i += 1;
+            }
+
+            i = 0;
+            while (i < typeInfo.custom.defaultValues.items.len) {
+                const initializer = typeInfo.custom.defaultValues.items[i];
+                try self.customType.data.put(initializer.label.hash, initializer.value);
+                i += 1;
+            }
+
+            i = 0;
+            while (i < initializerList.len) {
+                const initializer = initializerList[i];
+                try self.customType.data.put(initializer.label.hash, initializer.value);
+                i += 1;
+            }
+        }
+
+        //         var i: usize = self.customType.data.items.len;
+        //
+        //         while (i < typeInfo.custom.defaultValues.items.len) {
+        //             try self.customType.data.append(typeInfo.custom.defaultValues.items[i]);
+        //             i += 1;
+        //         }
+        //
+        //         // fill out the rest with defaults
+        //         while (i < typeInfo.custom.fields.items.len) {
+        //             // try self.customType.data.append();
+        //             i += 1;
+        //         }
+        //
         return self;
     }
 
@@ -330,7 +508,13 @@ pub const FactValue = union(BuiltinFactTypes) {
             .float => {},
             .ref => {},
             .typeRef => {},
-            .customType => {},
+            .customType => {
+                var i = self.customType.data.iterator();
+                while (i.next()) |entry| {
+                    entry.value_ptr.deinit();
+                }
+                self.customType.data.deinit();
+            },
             ._BADTYPE => {},
         }
     }
@@ -519,11 +703,25 @@ test "001-making-vars" {
 }
 
 test "002-nested-anonymous-types" {
+    std.debug.print("\n", .{});
     var typedb = try TypeDatabase.init(std.testing.allocator);
     defer typedb.deinit();
 
-    var dummyType = TypeDatabaseEntry.newCustomType(MakeLabel("myStruct2"), std.testing.allocator);
-    _ = try typedb.addNewType(dummyType);
+    {
+        var dummyType = TypeDatabaseEntry.newCustomType(MakeLabel("Struct2"), std.testing.allocator);
+        try dummyType.addChildType(MakeLabel("field_1"), typedb.getTypeByLabel(MakeLabel("boolean")));
+        try dummyType.addChildType(MakeLabel("another_field"), typedb.getTypeByLabel(MakeLabel("boolean")));
+        try dummyType.addChildType(MakeLabel("bad_field"), typedb.getTypeByLabel(MakeLabel("some non existent type")));
+        _ = try typedb.addNewType(dummyType);
+    }
+    {
+        var dummyType = TypeDatabaseEntry.newCustomType(MakeLabel("Struct3"), std.testing.allocator);
+        try dummyType.addChildType(MakeLabel("field_1"), typedb.getTypeByLabel(MakeLabel("boolean")));
+        try dummyType.addChildType(MakeLabel("another_field"), typedb.getTypeByLabel(MakeLabel("boolean")));
+        try dummyType.addChildType(MakeLabel("bad_field"), typedb.getTypeByLabel(MakeLabel("some non existent type")));
+        try dummyType.addChildType(MakeLabel("childStruct"), typedb.getTypeByLabel(MakeLabel("Struct2")));
+        _ = try typedb.addNewType(dummyType);
+    }
 
     var newType = TypeDatabaseEntry.newCustomType(MakeLabel("myStruct"), std.testing.allocator);
     try newType.addChildType(MakeLabel("field_1"), typedb.getTypeByLabel(MakeLabel("boolean")));
@@ -531,15 +729,21 @@ test "002-nested-anonymous-types" {
     try newType.addChildType(MakeLabel("bad_field"), typedb.getTypeByLabel(MakeLabel("some non existent type")));
     try newType.addChildType(MakeLabel("field_2"), typedb.getTypeByLabel(MakeLabel("string")));
     try newType.addChildType(MakeLabel("field_3"), typedb.getTypeByLabel(MakeLabel("integer")));
+    try newType.addChildType(MakeLabel("childStruct"), typedb.getTypeByLabel(MakeLabel("Struct2")));
+    try newType.addChildType(MakeLabel("childStruct2"), typedb.getTypeByLabel(MakeLabel("Struct3")));
     var ref = try typedb.addNewType(newType);
 
     {
-        var single_level_factValue = try FactValue.fromCustomType(typedb, ref, &.{}, std.testing.allocator);
+        var single_level_factValue = try FactValue.fromCustomType(
+            typedb,
+            ref,
+            &.{},
+            std.testing.allocator,
+        );
         defer single_level_factValue.deinit();
-        single_level_factValue.prettyPrintValue();
+        single_level_factValue.prettyPrintValue(typedb);
         _ = single_level_factValue;
     }
-
 }
 
 test "000-TypeDatabase-simple" {
