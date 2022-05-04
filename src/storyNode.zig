@@ -832,6 +832,10 @@ pub const NodeParser = struct {
 
             var shouldBreak = false;
             // oh man theres a few easy refactorings that can be done here that would midly improve performance.
+            if (!shouldBreak and tokMatchComment(tokenTypeSlice)) {
+                // std.debug.print(" comment (not a real node)\n", .{nodesCount});
+                shouldBreak = true;
+            }
             if (!shouldBreak and tokMatchSet(tokenTypeSlice, dataSlice)) {
                 nodesCount += 1;
                 std.debug.print("{d}: Set var\n", .{nodesCount});
@@ -921,10 +925,6 @@ pub const NodeParser = struct {
                 self.lastLabel = dataSlice[1];
                 shouldBreak = true;
             }
-            if (!shouldBreak and tokMatchComment(tokenTypeSlice)) {
-                // std.debug.print(" comment (not a real node)\n", .{nodesCount});
-                shouldBreak = true;
-            }
             if (!shouldBreak and tokMatchDialogueWithSpeaker(tokenTypeSlice)) {
                 const node = try self.story.newNodeWithContent(dataSlice[2], alloc);
                 nodesCount += 1;
@@ -958,7 +958,7 @@ pub const NodeParser = struct {
                 self.currentTokenWindow.startIndex = self.currentTokenWindow.endIndex;
             }
             if (self.currentTokenWindow.endIndex - self.currentTokenWindow.startIndex > 3 and self.currentTokenWindow.endIndex >= tokenTypes.items.len) {
-                std.debug.print("Unexpected end of file, parsing object from <here>, EOF seen <here>", .{});
+                std.debug.print("Unexpected end of file, parsing object from `{s}`", .{tokenData.items[self.currentTokenWindow.startIndex]});
                 return self.story;
             }
             if (self.currentTokenWindow.endIndex == tokenTypes.items.len) {

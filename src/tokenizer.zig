@@ -4,8 +4,7 @@ const AutoHashMap = std.AutoHashMap;
 
 pub const simplest_v1 =
     \\[hello]
-    \\#comment
-    \\$: Hello!
+    \\$: Hello! #second comment
     \\[question]
     \\$: I'm going to ask you a question.
     \\: do you like cats or dogs?
@@ -117,7 +116,7 @@ pub const easySampleData =
     \\[hello]
     \\# this a seperated comment
     \\@if(PersonA.isPissedOff)
-    \\     PersonA: Can you fuck off?
+    \\     PersonA: Can you fuck off? #
     \\@else
     \\    PersonA: Hello!
     \\        > I hate you
@@ -384,6 +383,8 @@ pub const TokenStream = struct {
                     if (shouldBreak) {
                         if (std.mem.endsWith(u8, slice, "#")) {
                             mode = ParserMode.comments;
+                            try tokens.append("#");
+                            try token_types.append(TokenType.HASHTAG);
                         } else {
                             try tokens.append("\n");
                             try token_types.append(TokenType.NEWLINE);
@@ -421,10 +422,14 @@ pub const TokenStream = struct {
         }
 
         std.debug.assert(tokens.items.len == token_types.items.len);
-        return TokenStream{
+        var rv = Self{
             .tokens = tokens,
             .token_types = token_types,
         };
+
+        // rv.test_display();
+
+        return rv;
     }
 
     pub fn test_display(self: Self) void {
