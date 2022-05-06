@@ -55,23 +55,23 @@ pub const FactValue = union(BuiltinFactTypes) {
     pub fn prettyPrint(self: @This()) void {
         utils.implement_func_for_tagged_union(self, "prettyPrint", void, .{});
     }
-    pub fn compareEq(self: @This(), other: @This()) bool {
-        return utils.implement_func_for_tagged_union(self, "compareEq", bool, other);
+    pub fn compareEq(self: @This(), other: @This(), alloc: std.mem.Allocator) bool {
+        return utils.implement_func_for_tagged_union(self, "compareEq", bool, .{ other, alloc });
     }
-    pub fn compareNe(self: @This(), other: @This()) bool {
-        return utils.implement_func_for_tagged_union(self, "compareNe", bool, other);
+    pub fn compareNe(self: @This(), other: @This(), alloc: std.mem.Allocator) bool {
+        return utils.implement_func_for_tagged_union(self, "compareNe", bool, .{ other, alloc });
     }
-    pub fn compareLt(self: @This(), other: @This()) bool {
-        return utils.implement_func_for_tagged_union(self, "compareLt", bool, other);
+    pub fn compareLt(self: @This(), other: @This(), alloc: std.mem.Allocator) bool {
+        return utils.implement_func_for_tagged_union(self, "compareLt", bool, .{ other, alloc });
     }
-    pub fn compareGt(self: @This(), other: @This()) bool {
-        return utils.implement_func_for_tagged_union(self, "compareGt", bool, other);
+    pub fn compareGt(self: @This(), other: @This(), alloc: std.mem.Allocator) bool {
+        return utils.implement_func_for_tagged_union(self, "compareGt", bool, .{ other, alloc });
     }
-    pub fn compareLe(self: @This(), other: @This()) bool {
-        return utils.implement_func_for_tagged_union(self, "compareLe", bool, other);
+    pub fn compareLe(self: @This(), other: @This(), alloc: std.mem.Allocator) bool {
+        return utils.implement_func_for_tagged_union(self, "compareLe", bool, .{ other, alloc });
     }
-    pub fn compareGe(self: @This(), other: @This()) bool {
-        return utils.implement_func_for_tagged_union(self, "compareGe", bool, other);
+    pub fn compareGe(self: @This(), other: @This(), alloc: std.mem.Allocator) bool {
+        return utils.implement_func_for_tagged_union(self, "compareGe", bool, .{ other, alloc });
     }
 
     pub fn makeDefault(tag: BuiltinFactTypes, alloc: std.mem.Allocator) @This() {
@@ -125,13 +125,28 @@ pub const FactValue = union(BuiltinFactTypes) {
     }
 
     // optional interface functions
-    pub fn asFactString(self: @This()) FactString {
-        return utils.implement_func_for_tagged_union(self, "asFactString", FactString, .{});
+    pub fn asFactString(self: @This(), alloc: std.mem.Allocator) ArrayList(u8) {
+        return utils.implement_func_for_tagged_union(self, "asFactString", ArrayList(u8), alloc);
+    }
+
+    pub fn asFactString_static(self: @This()) ArrayList(u8) {
+        return utils.implement_func_for_tagged_union(self, "asFactString_static", ArrayList(u8), .{});
+    }
+
+    pub fn doesUnionHave_asFactString_static(self: @This()) bool {
+        inline for (@typeInfo(BuiltinFactTypes).Enum.fields) |field| {
+            if (@intToEnum(BuiltinFactTypes, field.value) == self) {
+                if (@hasDecl(@TypeOf(@field(self, field.name)), "asFactString_static")) {
+                    return true;
+                }
+            }
+        }
+        return false;
     }
 
     pub fn deinit(self: *@This()) void {
-        _ = self;
-        // return utils.implement_nonconst_func_for_tagged_union(self, "deinit", void, .{});
+        // _ = self;
+        return utils.implement_nonconst_func_for_tagged_union(self, "deinit", void, .{});
     }
 };
 
@@ -156,7 +171,8 @@ test "010-testing-new-facts" {
     defer y2.deinit();
 
     x.prettyPrint();
+    std.debug.print("\n", .{});
     y.prettyPrint();
-    std.debug.print("\n\n", .{});
-    std.debug.print("testing: {}\n", .{y.compareEq(y2)});
+    std.debug.print("\n", .{});
+    std.debug.print("testing: {}\n", .{y.compareEq(y2, std.testing.allocator)});
 }

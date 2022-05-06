@@ -10,11 +10,20 @@ pub fn prettyPrint(self: Self, _: struct {}) void {
     std.debug.print("string: {s}", .{self.value.items});
 }
 
-pub fn compareEq(self: Self, right: anytype) bool {
-    return if (@hasDecl(@TypeOf(right), "asFactString"))
-        std.mem.eql(u8, self.value.items, right.asFactString().value.items)
-    else
-        false;
+// arg 0 is the payload object
+// arg 1 is the the allocator
+pub fn compareEq(self: Self, args: anytype) bool {
+    if (@hasDecl(@TypeOf(args[0]), "doesUnionHave_asFactString_static")) {
+        if (args[0].doesUnionHave_asFactString_static()) {
+            return std.mem.eql(u8, self.value.items, args[0].asFactString_static().items);
+        }
+    }
+    if (@hasDecl(@TypeOf(args[0]), "asFactString")) {
+        var rhs = args[0].asFactString(args[1]);
+        defer rhs.deinit();
+        return std.mem.eql(u8, self.value.items, rhs.items);
+    }
+    return false;
 }
 
 pub fn compareNe(self: Self, right: anytype) bool {
@@ -44,8 +53,14 @@ pub fn compareGe(self: Self, right: anytype) bool {
     return self.value.items.len >= right.asFactString().value.len;
 }
 
-pub fn asFactString(self: @This(), _: anytype) @This() {
-    return self;
+pub fn asFactString_static(self: @This(), _: anytype) ArrayList(u8) {
+    return self.value;
+}
+
+pub fn asFactString(self: @This(), alloc: anytype) ArrayList(u8) {
+    var rv = ArrayList(u8).init(alloc);
+    rv.appendSlice(self.value.items) catch return rv;
+    return rv;
 }
 
 pub fn init(allocator: std.mem.Allocator) @This() {
