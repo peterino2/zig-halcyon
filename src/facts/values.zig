@@ -75,49 +75,14 @@ pub const FactValue = union(BuiltinFactTypes) {
     }
 
     pub fn makeDefault(tag: BuiltinFactTypes, alloc: std.mem.Allocator) @This() {
-        switch (tag) {
-            ._BADTYPE => {
-                return .{ ._BADTYPE = Fact_BADTYPE.init(alloc) };
-            },
-            .boolean => {
-                return .{ .boolean = FactBoolean.init(alloc) };
-            },
-            .integer => {
-                return .{ .integer = FactInteger.init(alloc) };
-            },
-            .float => {
-                return .{ .float = FactFloat.init(alloc) };
-            },
-            .typeRef => {
-                return .{ .typeRef = TypeRef.init(alloc) };
-            },
-            .ref => {
-                return .{ .ref = FactRef.init(alloc) };
-            },
-            .array => {
-                return .{ .array = FactArray.init(alloc) };
-            },
-            .string => {
-                return .{ .string = FactString.init(alloc) };
-            },
-            .typeInfo => {
-                return .{ .typeInfo = FactTypeInfo.init(alloc) };
-            },
-            .userEnum => {
-                return .{ .userEnum = FactUserEnum.init(alloc) };
-            },
-            .userStruct => {
-                return .{ .userStruct = FactUserStruct.init(alloc) };
-            },
+        inline for (@typeInfo(BuiltinFactTypes).Enum.fields) |field| {
+            if (@intToEnum(BuiltinFactTypes, field.value) == tag) {
+                var x: @This() = undefined;
+                _ = x;
+                var f = @unionInit(@This(), field.name, @field(@TypeOf(@field(x, field.name)), "init")(alloc));
+                return f;
+            }
         }
-
-        // inline for (@typeInfo(BuiltinFactTypes).Enum.fields) |field| {
-        //     if (@intToEnum(BuiltinFactTypes, field.value) == tag) {
-        //         var f: FactValue = undefined;
-        //         @field(f, field.name) = @field(@TypeOf(@field(f, field.name)), "init")(alloc);
-        //         return f;
-        //     }
-        // }
 
         std.debug.print("ERROR: missing init implementation for {}\n", .{tag});
 
@@ -125,18 +90,26 @@ pub const FactValue = union(BuiltinFactTypes) {
     }
 
     // optional interface functions
-    pub fn asFactString(self: @This(), alloc: std.mem.Allocator) ArrayList(u8) {
-        return utils.implement_func_for_tagged_union(self, "asFactString", ArrayList(u8), alloc);
+    pub fn asString(self: @This(), alloc: std.mem.Allocator) ArrayList(u8) {
+        return utils.implement_func_for_tagged_union(self, "asString", ArrayList(u8), alloc);
     }
 
-    pub fn asFactString_static(self: @This()) ArrayList(u8) {
-        return utils.implement_func_for_tagged_union(self, "asFactString_static", ArrayList(u8), .{});
+    pub fn asString_static(self: @This()) ArrayList(u8) {
+        return utils.implement_func_for_tagged_union(self, "asString_static", ArrayList(u8), .{});
     }
 
-    pub fn doesUnionHave_asFactString_static(self: @This()) bool {
+    pub fn asFloat(self: @This()) f64 {
+        return utils.implement_func_for_tagged_union(self, "asFloat", f64, .{});
+    }
+
+    pub fn asInteger(self: @This()) i64 {
+        return utils.implement_func_for_tagged_union(self, "asInteger", i64, .{});
+    }
+
+    pub fn doesUnionHave_asString_static(self: @This()) bool {
         inline for (@typeInfo(BuiltinFactTypes).Enum.fields) |field| {
             if (@intToEnum(BuiltinFactTypes, field.value) == self) {
-                if (@hasDecl(@TypeOf(@field(self, field.name)), "asFactString_static")) {
+                if (@hasDecl(@TypeOf(@field(self, field.name)), "asString_static")) {
                     return true;
                 }
             }
@@ -149,6 +122,46 @@ pub const FactValue = union(BuiltinFactTypes) {
         return utils.implement_nonconst_func_for_tagged_union(self, "deinit", void, .{});
     }
 };
+
+test "012-conversions" {
+    {
+        var bool1 = FactValue.makeDefault(BuiltinFactTypes.boolean, std.testing.allocator);
+        var bool2 = FactValue.makeDefault(BuiltinFactTypes.boolean, std.testing.allocator);
+
+        var trueString = FactValue.makeDefault(BuiltinFactTypes.string, std.testing.allocator);
+        try trueString.string.value.appendSlice("true");
+        var falseString = FactValue.makeDefault(BuiltinFactTypes.string, std.testing.allocator);
+        try falseString.string.value.appendSlice("false");
+
+        defer trueString.deinit();
+        defer falseString.deinit();
+
+        bool1.boolean.value = true;
+        // boolean to float
+        try std.testing.expect(1.0 == bool1.asFloat());
+        try std.testing.expect(0.0 == bool2.asFloat());
+        // boolean to int
+        try std.testing.expect(1 == bool1.asInteger());
+        try std.testing.expect(0 == bool2.asInteger());
+        // boolean to string
+        var testString = FactValue{ .string = .{ .value = bool1.asString(std.testing.allocator) } };
+        defer testString.deinit();
+        try std.testing.expect(trueString.compareEq(testString, std.testing.allocator));
+
+        var testString2 = FactValue{ .string = .{ .value = bool2.asString(std.testing.allocator) } };
+        defer testString2.deinit();
+        try std.testing.expect(falseString.compareEq(testString2, std.testing.allocator));
+    }
+
+    // float to boolean
+    // float to int
+    // float to string
+
+    // boolean to typeInfo
+    // float to typeInfo
+    // int to typeInfo
+    // enum to typeInfo
+}
 
 test "011-validate-all-interfaces" {
     inline for (@typeInfo(BuiltinFactTypes).Enum.fields) |field| {
