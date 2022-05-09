@@ -1,16 +1,9 @@
 const std = @import("std");
 const values = @import("values.zig");
-
 const utils = @import("factUtils.zig");
+
 const ArrayList = std.ArrayList;
-const AutoHashMap = std.AutoHashMap;
-const StringHashMap = std.StringHashMap;
-
 const BuiltinFactTypes = utils.BuiltinFactTypes;
-const TypeRef = utils.TypeRef;
-const Label = utils.TypeRef;
-const MakeLabel = utils.MakeLabel;
-
 const FactValue = values.FactValue;
 
 pub fn stringTest(string: anytype, expected: []const u8) !void {
@@ -147,14 +140,6 @@ test "013-conversions-float" {
     try stringTest(float1, "420.69");
     try stringTest(float2, "0");
     try stringTest(float3, "-12");
-
-    // comparison tests
-    // eq
-    // ne
-    // le
-    // ge
-    // lt
-    // gt
 }
 
 test "012-conversions-boolean" {

@@ -6,7 +6,7 @@ const StringHashMap = std.StringHashMap;
 
 const BuiltinFactTypes = utils.BuiltinFactTypes;
 const TypeRef = utils.TypeRef;
-const Label = utils.TypeRef;
+const Label = utils.Label;
 const MakeLabel = utils.MakeLabel;
 
 pub const Fact_BADTYPE = @import("Fact_BADTYPE.zig");
@@ -23,6 +23,11 @@ pub const FactString = @import("FactString.zig");
 pub const FactTypeInfo = @import("FactTypeInfo.zig");
 pub const FactUserEnum = @import("FactUserEnum.zig");
 pub const FactUserStruct = @import("FactUserStruct.zig");
+
+pub const Initializer = struct {
+    label: Label,
+    value: FactValue,
+};
 
 pub const FactValue = union(BuiltinFactTypes) {
     // bad type

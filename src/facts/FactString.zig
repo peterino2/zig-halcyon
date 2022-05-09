@@ -7,7 +7,7 @@ value: ArrayList(u8),
 // required functions
 
 pub fn prettyPrint(self: Self, _: struct {}) void {
-    std.debug.print("string: {s}", .{self.value.items});
+    std.debug.print("string: \"{s}\"", .{self.value.items});
 }
 
 // arg 0 is the payload object
