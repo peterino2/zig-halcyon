@@ -17,38 +17,53 @@ pub fn init(_: std.mem.Allocator) @This() {
 
 pub fn deinit(_: @This(), _: anytype) void {}
 
-pub fn compareEq(self: Self, right: anytype) bool {
+pub fn compareEq(self: Self, args: anytype) bool {
+    const right = args[0];
+    if (@hasDecl(@TypeOf(right), "asBoolean")) {
+        return self.value == right.asBoolean();
+    } else {
+        return false;
+    }
+}
+
+pub fn compareNe(self: Self, args: anytype) bool {
+    const right = args[0];
     return if (@hasDecl(@TypeOf(right), "asBoolean"))
-        std.mem.eql(u8, self.value.items, right.asBoolean().value.items)
+        return self.value != right.asBoolean()
     else
         false;
 }
 
-pub fn compareNe(self: Self, right: anytype) bool {
-    return if (@hasDecl(@TypeOf(right), "asBoolean"))
-        std.mem.eql(u8, self.value.items, right.asBoolean().value.items)
-    else
-        false;
+pub fn compareLt(self: Self, args: anytype) bool {
+    const right = args[0];
+    if (!@hasDecl(@TypeOf(right), "asBoolean")) return false;
+    const right_value = right.asBoolean();
+    if (right_value == true and self.value == false) return true;
+    return false;
 }
 
-pub fn compareLt(self: Self, right: anytype) bool {
+pub fn compareGt(self: Self, args: anytype) bool {
+    const right = args[0];
     if (!@hasDecl(@TypeOf(right), "asBoolean")) return false;
-    return self.value < right.asBoolean().value;
+    const right_value = right.asBoolean();
+    if (right_value == false and self.value == true) return true;
+    return false;
 }
 
-pub fn compareGt(self: Self, right: anytype) bool {
+pub fn compareLe(self: Self, args: anytype) bool {
+    const right = args[0];
     if (!@hasDecl(@TypeOf(right), "asBoolean")) return false;
-    return self.value > right.asBoolean().value;
+    const right_value = right.asBoolean();
+    if (right_value == true and self.value == false) return true;
+    return self.value == right_value;
 }
 
-pub fn compareLe(self: Self, right: anytype) bool {
+pub fn compareGe(self: Self, args: anytype) bool {
+    const right = args[0];
     if (!@hasDecl(@TypeOf(right), "asBoolean")) return false;
-    return self.value <= right.asBoolean().value;
-}
-
-pub fn compareGe(self: Self, right: anytype) bool {
-    if (!@hasDecl(@TypeOf(right), "asBoolean")) return false;
-    return self.value >= right.asBoolean().value;
+    const right_value = right.asBoolean();
+    if (right_value == false and self.value == true) return true;
+    return self.value == right_value;
 }
 
 // optional functions
@@ -61,6 +76,17 @@ pub fn asString(self: @This(), alloc: anytype) std.ArrayList(u8) {
         rv.appendSlice("false") catch return rv;
     }
     return rv;
+}
+
+pub const trueString: []const u8 = "true";
+pub const falseString: []const u8 = "false";
+
+pub fn asString_static(self: @This(), _: anytype) []const u8 {
+    if (self.value) {
+        return trueString;
+    } else {
+        return falseString;
+    }
 }
 
 pub fn asInteger(self: @This(), _: anytype) i64 {

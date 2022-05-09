@@ -94,8 +94,8 @@ pub const FactValue = union(BuiltinFactTypes) {
         return utils.implement_func_for_tagged_union(self, "asString", ArrayList(u8), alloc);
     }
 
-    pub fn asString_static(self: @This()) ArrayList(u8) {
-        return utils.implement_func_for_tagged_union(self, "asString_static", ArrayList(u8), .{});
+    pub fn asString_static(self: @This()) []const u8 {
+        return utils.implement_func_for_tagged_union(self, "asString_static", []const u8, .{});
     }
 
     pub fn asFloat(self: @This()) f64 {
@@ -104,6 +104,10 @@ pub const FactValue = union(BuiltinFactTypes) {
 
     pub fn asInteger(self: @This()) i64 {
         return utils.implement_func_for_tagged_union(self, "asInteger", i64, .{});
+    }
+
+    pub fn asBoolean(self: @This()) bool {
+        return utils.implement_func_for_tagged_union(self, "asBoolean", bool, .{});
     }
 
     pub fn doesUnionHave_asString_static(self: @This()) bool {
@@ -122,70 +126,3 @@ pub const FactValue = union(BuiltinFactTypes) {
         return utils.implement_nonconst_func_for_tagged_union(self, "deinit", void, .{});
     }
 };
-
-test "012-conversions" {
-    {
-        var bool1 = FactValue.makeDefault(BuiltinFactTypes.boolean, std.testing.allocator);
-        var bool2 = FactValue.makeDefault(BuiltinFactTypes.boolean, std.testing.allocator);
-
-        var trueString = FactValue.makeDefault(BuiltinFactTypes.string, std.testing.allocator);
-        try trueString.string.value.appendSlice("true");
-        var falseString = FactValue.makeDefault(BuiltinFactTypes.string, std.testing.allocator);
-        try falseString.string.value.appendSlice("false");
-
-        defer trueString.deinit();
-        defer falseString.deinit();
-
-        bool1.boolean.value = true;
-        // boolean to float
-        try std.testing.expect(1.0 == bool1.asFloat());
-        try std.testing.expect(0.0 == bool2.asFloat());
-        // boolean to int
-        try std.testing.expect(1 == bool1.asInteger());
-        try std.testing.expect(0 == bool2.asInteger());
-        // boolean to string
-        var testString = FactValue{ .string = .{ .value = bool1.asString(std.testing.allocator) } };
-        defer testString.deinit();
-        try std.testing.expect(trueString.compareEq(testString, std.testing.allocator));
-
-        var testString2 = FactValue{ .string = .{ .value = bool2.asString(std.testing.allocator) } };
-        defer testString2.deinit();
-        try std.testing.expect(falseString.compareEq(testString2, std.testing.allocator));
-    }
-
-    // float to boolean
-    // float to int
-    // float to string
-
-    // boolean to typeInfo
-    // float to typeInfo
-    // int to typeInfo
-    // enum to typeInfo
-}
-
-test "011-validate-all-interfaces" {
-    inline for (@typeInfo(BuiltinFactTypes).Enum.fields) |field| {
-        var testFact = FactValue.makeDefault(@intToEnum(BuiltinFactTypes, field.value), std.testing.allocator);
-        defer testFact.deinit();
-        std.debug.print("\n", .{});
-        testFact.prettyPrint();
-        _ = testFact;
-    }
-    std.debug.print("\n", .{});
-}
-
-test "010-testing-new-facts" {
-    std.debug.print("\n", .{});
-    var x = FactValue{ .boolean = .{ .value = true } };
-
-    var y = try FactValue.fromUtf8("testing", std.testing.allocator);
-    defer y.deinit();
-    var y2 = try FactValue.fromUtf8("testing", std.testing.allocator);
-    defer y2.deinit();
-
-    x.prettyPrint();
-    std.debug.print("\n", .{});
-    y.prettyPrint();
-    std.debug.print("\n", .{});
-    std.debug.print("testing: {}\n", .{y.compareEq(y2, std.testing.allocator)});
-}
