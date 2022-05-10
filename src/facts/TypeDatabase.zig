@@ -12,6 +12,7 @@ const FactTypeInfo = values.FactTypeInfo;
 
 const BuiltinFactTypes = utils.BuiltinFactTypes;
 const MakeLabel = utils.MakeLabel;
+const Label = utils.Label;
 const TypeRef = utils.TypeRef;
 
 // next thing to work on:
@@ -21,10 +22,10 @@ const TypeRef = utils.TypeRef;
 // type info?
 // - instantiate defaults - for pod types - done
 // - is builtin or not - done
-// - add fields - don
+// - add fields - done
 //
 // type database operations:
-// - add types
+// - add types - done
 // - create a reference to type
 // - deep copy
 // - inspect and view all subtypes
@@ -33,6 +34,7 @@ const TypeRef = utils.TypeRef;
 //
 // stuff I want from factValues
 // - get typeOf from a FactValue
+// - deepCopy
 
 const Self = @This();
 
@@ -57,7 +59,7 @@ pub fn init(alloc: std.mem.Allocator) !Self {
             @intToEnum(BuiltinFactTypes, field.value),
             std.testing.allocator,
         );
-        typeInfo.prettyPrint(.{});
+        typeInfo.prettyPrint(0);
         try rv.addType(typeInfo);
         std.debug.print("\n", .{});
     }
@@ -67,16 +69,28 @@ pub fn init(alloc: std.mem.Allocator) !Self {
 
 pub fn addType(self: *Self, typeInfo: FactTypeInfo) !void {
     const label = typeInfo.getLabel();
+
     if (self.typesByLabel.contains(label.hash)) {
         std.debug.print("[Error]: trying to add type of hash {s}", .{label.utf8});
         return;
     }
 
-    var typeRef = TypeRef{ .id = label.hash };
+    var typeRef = TypeRef{ .id = self.types.items.len };
 
     try self.typesByLabel.put(label.hash, typeRef);
     try self.types.append(typeInfo);
+    try std.testing.expect(self.typesByLabel.count() == self.types.items.len);
 }
+
+pub fn getTypeByLabelAsPointer(self: *Self, label: Label) ?*FactTypeInfo {
+    if (self.typesByLabel.contains(label.hash)) {
+        var ref = self.typesByLabel.getEntry(label.hash).?.value_ptr;
+        return &self.types.items[ref.id];
+    }
+    return null;
+}
+
+pub fn getTypeByLabelAsRef() void {}
 
 pub fn deinit(self: *Self) void {
     var i: usize = 0;
@@ -91,4 +105,6 @@ pub fn deinit(self: *Self) void {
 test "030-TypeDatabase" {
     var db = try Self.init(std.testing.allocator);
     defer db.deinit();
+
+    try std.testing.expect(db.getTypeByLabelAsPointer(comptime MakeLabel("boolean")) != null);
 }

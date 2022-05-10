@@ -6,7 +6,7 @@ value: ArrayList(u8),
 
 // required functions
 
-pub fn prettyPrint(self: Self, _: struct {}) void {
+pub fn prettyPrint(self: Self, _: anytype) void {
     std.debug.print("string: \"{s}\"", .{self.value.items});
 }
 

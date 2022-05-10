@@ -20,19 +20,28 @@ pub fn getLabel(self: Self) utils.Label {
 }
 
 // required functions
-pub fn prettyPrint(self: Self, _: anytype) void {
-    std.debug.print("type {s} ", .{self.value.name.items});
+pub fn prettyPrint(self: Self, indentLevel: anytype) void {
+    if (self.value.name.items.len == 0) {
+        std.debug.print("<type> BAD_TYPE", .{});
+        return;
+    } else {
+        utils.printIndents(indentLevel);
+        std.debug.print("<type> {s} ", .{self.value.name.items});
+    }
+
     if (self.isBuiltin()) std.debug.print("(builtin)", .{});
     std.debug.print("{{\n", .{});
 
     var i: usize = 0;
     while (i < self.value.defaultValues.items.len) {
         const initializer = self.value.defaultValues.items[i];
-        std.debug.print("  {s}: default = ", .{initializer.label.utf8});
-        initializer.value.prettyPrint();
+        utils.printIndents(indentLevel + 1);
+        std.debug.print("{s}:\n", .{initializer.label.utf8});
+        initializer.value.prettyPrint(indentLevel + 2);
         std.debug.print(",\n", .{});
         i += 1;
     }
+    utils.printIndents(indentLevel);
     std.debug.print("}}", .{});
 }
 
@@ -92,7 +101,7 @@ test "020-typeInfo-init" {
         inline for (@typeInfo(BuiltinFactTypes).Enum.fields) |field| {
             var x = try createDefaultTypeInfo(@intToEnum(BuiltinFactTypes, field.value), std.testing.allocator);
             defer x.deinit(.{});
-            x.prettyPrint(.{});
+            x.prettyPrint(0);
             std.debug.print("\n", .{});
         }
     }

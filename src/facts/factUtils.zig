@@ -6,6 +6,13 @@ const AutoHashMap = std.AutoHashMap;
 const StringHashMap = std.StringHashMap;
 const showDebug = false;
 
+pub fn printIndents(indentLevel: usize) void {
+    var i = indentLevel;
+    while (i > 0) : (i -= 1) {
+        std.debug.print("  ", .{});
+    }
+}
+
 pub fn implement_nonconst_func_for_tagged_union(
     self: anytype,
     comptime funcName: []const u8,

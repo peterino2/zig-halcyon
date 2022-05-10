@@ -57,8 +57,17 @@ pub const FactValue = union(BuiltinFactTypes) {
     }
 
     // Required functions
-    pub fn prettyPrint(self: @This()) void {
-        utils.implement_func_for_tagged_union(self, "prettyPrint", void, .{});
+    pub fn prettyPrint(self: @This(), indentLevel: usize) void {
+        var i = indentLevel;
+        while (i > 0) {
+            std.debug.print("  ", .{});
+            i -= 1;
+        }
+        if (indentLevel > 6) {
+            std.debug.print("... ", .{});
+            return;
+        }
+        utils.implement_func_for_tagged_union(self, "prettyPrint", void, indentLevel);
     }
     pub fn compareEq(self: @This(), other: @This(), alloc: std.mem.Allocator) bool {
         return utils.implement_func_for_tagged_union(self, "compareEq", bool, .{ other, alloc });
