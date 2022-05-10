@@ -13,7 +13,7 @@ pub const simplest_v1 =
     \\    > Dogs:
     \\        $: Nice!
     \\        Lee: Yeah man they're delicious
-    \\    > Both:
+    \\    > (Chun-Li) Both:
     \\        $: Don't be stupid you have to pick one.
     \\        @goto question
     \\$: you walk away in disgust

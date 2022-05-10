@@ -22,17 +22,18 @@ const TypeRef = utils.TypeRef;
 // type info?
 // - instantiate defaults - for pod types - done
 // - is builtin or not - done
-// - add fields - done
+// - add initializers - done
+// - rich name information - done
 //
 // type database operations:
-// - add types - done
+// - add types
+// - add customTypes
+// - create value of type
 // - create a reference to type
-// - deep copy
 // - inspect and view all subtypes
-// - rich name information
 // - is same as another type
 //
-// stuff I want from factValues
+// stuff I want from factValues with typeDatabase
 // - get typeOf from a FactValue
 // - deepCopy
 
@@ -90,7 +91,13 @@ pub fn getTypeByLabelAsPointer(self: *Self, label: Label) ?*FactTypeInfo {
     return null;
 }
 
-pub fn getTypeByLabelAsRef() void {}
+pub fn getTypeByLabelAsRef(self: Self, label: Label) TypeRef {
+    if (self.typesByLabel.contains(label.hash)) {
+        var ref = self.typesByLabel.getEntry(label.hash).?.value_ptr;
+        return ref.*;
+    }
+    return .{ .id = 0 };
+}
 
 pub fn deinit(self: *Self) void {
     var i: usize = 0;
@@ -107,4 +114,5 @@ test "030-TypeDatabase" {
     defer db.deinit();
 
     try std.testing.expect(db.getTypeByLabelAsPointer(comptime MakeLabel("boolean")) != null);
+    try std.testing.expect(db.getTypeByLabelAsRef(comptime MakeLabel("boolean")).id == @enumToInt(BuiltinFactTypes.boolean));
 }

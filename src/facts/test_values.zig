@@ -10,7 +10,7 @@ pub fn stringTest(string: anytype, expected: []const u8) !void {
     // float to string
     var x = string.asString(std.testing.allocator);
     defer x.deinit();
-    std.debug.print("{s}\n", .{x.items});
+    std.debug.print("{s} vs {s}\n", .{ x.items, expected });
     try std.testing.expect(std.mem.eql(u8, expected, x.items));
 }
 
@@ -57,7 +57,7 @@ test "014-conversions-integer" {
     var int2 = FactValue{ .integer = .{ .value = 0 } };
     var int3 = FactValue{ .integer = .{ .value = -12 } };
 
-    var float1 = FactValue{ .float = .{ .value = 420.0 } };
+    var float1 = FactValue{ .float = .{ .value = 420.69 } };
     var float2 = FactValue{ .float = .{ .value = 0.0 } };
     var float3 = FactValue{ .float = .{ .value = -12.0 } };
 
@@ -97,7 +97,7 @@ test "014-conversions-integer" {
     try std.testing.expect(int3.compareLe(float3, std.testing.allocator));
 
     // float to integer
-    try std.testing.expect(float1.float.value == int1.asFloat());
+    try std.testing.expect(float1.float.value >= int1.asFloat());
     try std.testing.expect(float2.float.value == int2.asFloat());
     try std.testing.expect(float3.float.value == int3.asFloat());
 
@@ -181,7 +181,7 @@ test "011-validate-all-interfaces" {
         var testFact = FactValue.makeDefault(@intToEnum(BuiltinFactTypes, field.value), std.testing.allocator);
         defer testFact.deinit();
         std.debug.print("\n", .{});
-        testFact.prettyPrint();
+        testFact.prettyPrint(0);
         _ = testFact;
     }
     std.debug.print("\n", .{});
@@ -196,9 +196,9 @@ test "010-testing-new-facts" {
     var y2 = try FactValue.fromUtf8("testing", std.testing.allocator);
     defer y2.deinit();
 
-    x.prettyPrint();
+    x.prettyPrint(0);
     std.debug.print("\n", .{});
-    y.prettyPrint();
+    y.prettyPrint(0);
     std.debug.print("\n", .{});
     std.debug.print("testing: {}\n", .{y.compareEq(y2, std.testing.allocator)});
 }
