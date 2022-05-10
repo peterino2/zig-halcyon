@@ -15,9 +15,16 @@ value: struct {
     typeTag: BuiltinFactTypes,
 },
 
+pub fn getLabel(self: Self) utils.Label {
+    return MakeLabel(self.value.name.items);
+}
+
 // required functions
 pub fn prettyPrint(self: Self, _: anytype) void {
-    std.debug.print("type {s} {{\n", .{self.value.name.items});
+    std.debug.print("type {s} ", .{self.value.name.items});
+    if (self.isBuiltin()) std.debug.print("(builtin)", .{});
+    std.debug.print("{{\n", .{});
+
     var i: usize = 0;
     while (i < self.value.defaultValues.items.len) {
         const initializer = self.value.defaultValues.items[i];
@@ -55,7 +62,7 @@ pub fn makeFromTag(tag: BuiltinFactTypes, alloc: std.mem.Allocator) !Self {
         .value = .{
             .name = ArrayList(u8).init(alloc),
             .defaultValues = ArrayList(Initializer).init(alloc),
-            .typeTag = BuiltinFactTypes._BADTYPE,
+            .typeTag = tag,
         },
     };
     try self.value.name.appendSlice(@tagName(tag));
@@ -72,6 +79,10 @@ pub fn createDefaultTypeInfo(tag: BuiltinFactTypes, alloc: std.mem.Allocator) !S
 
     try typeInfo.value.defaultValues.append(i);
     return typeInfo;
+}
+
+pub fn isBuiltin(self: Self) bool {
+    return @enumToInt(self.value.typeTag) < @enumToInt(BuiltinFactTypes.userEnum);
 }
 
 test "020-typeInfo-init" {

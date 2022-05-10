@@ -13,8 +13,6 @@ pub fn implement_nonconst_func_for_tagged_union(
     args: anytype,
 ) returnType {
     const Self = @TypeOf(self.*);
-    _ = Self;
-    _ = args;
     inline for (@typeInfo(std.meta.Tag(Self)).Enum.fields) |field| {
         if (@intToEnum(std.meta.Tag(Self), field.value) == self.*) {
             if (@hasDecl(@TypeOf(@field(self, field.name)), funcName)) {
@@ -32,8 +30,6 @@ pub fn implement_func_for_tagged_union(
     args: anytype,
 ) returnType {
     const Self = @TypeOf(self);
-    _ = Self;
-    _ = args;
     inline for (@typeInfo(std.meta.Tag(Self)).Enum.fields) |field| {
         if (@intToEnum(std.meta.Tag(Self), field.value) == self) {
             if (showDebug) std.debug.print("Executing func {s} for tag {s}\n", .{ funcName, field.name });

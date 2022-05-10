@@ -19,17 +19,17 @@ const TypeRef = utils.TypeRef;
 //
 // what kind of stuff do i want to be able to do with
 // type info?
-// - instantiate defaults - for pod types
+// - instantiate defaults - for pod types - done
+// - is builtin or not - done
+// - add fields - don
 //
 // type database operations:
+// - add types
 // - create a reference to type
 // - deep copy
 // - inspect and view all subtypes
 // - rich name information
 // - is same as another type
-// - add fields
-// - is builtin or not
-// - compare types ( is equal that's about it )
 //
 // stuff I want from factValues
 // - get typeOf from a FactValue
@@ -57,13 +57,25 @@ pub fn init(alloc: std.mem.Allocator) !Self {
             @intToEnum(BuiltinFactTypes, field.value),
             std.testing.allocator,
         );
-
-        try rv.types.append(typeInfo);
         typeInfo.prettyPrint(.{});
+        try rv.addType(typeInfo);
         std.debug.print("\n", .{});
     }
 
     return rv;
+}
+
+pub fn addType(self: *Self, typeInfo: FactTypeInfo) !void {
+    const label = typeInfo.getLabel();
+    if (self.typesByLabel.contains(label.hash)) {
+        std.debug.print("[Error]: trying to add type of hash {s}", .{label.utf8});
+        return;
+    }
+
+    var typeRef = TypeRef{ .id = label.hash };
+
+    try self.typesByLabel.put(label.hash, typeRef);
+    try self.types.append(typeInfo);
 }
 
 pub fn deinit(self: *Self) void {
