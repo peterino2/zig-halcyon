@@ -36,9 +36,47 @@ const TypeRef = utils.TypeRef;
 
 const Self = @This();
 
-const TypeDatabase = struct {
-    types: ArrayList(FactTypeInfo),
-    typesByLabel: AutoHashMap(u32, TypeRef),
-};
+types: ArrayList(FactTypeInfo),
+typesByLabel: AutoHashMap(u32, TypeRef),
 
-test "030-TypeDatabase" {}
+pub fn init(alloc: std.mem.Allocator) !Self {
+    var rv = Self{
+        .types = ArrayList(FactTypeInfo).init(alloc),
+        .typesByLabel = AutoHashMap(u32, TypeRef).init(alloc),
+    };
+
+    std.debug.print("\n", .{});
+    inline for (@typeInfo(BuiltinFactTypes).Enum.fields) |field| {
+        if (@intToEnum(BuiltinFactTypes, field.value) == BuiltinFactTypes.userStruct or
+            @intToEnum(BuiltinFactTypes, field.value) == BuiltinFactTypes.userEnum)
+        {
+            continue;
+        }
+
+        var typeInfo = try FactTypeInfo.createDefaultTypeInfo(
+            @intToEnum(BuiltinFactTypes, field.value),
+            std.testing.allocator,
+        );
+
+        try rv.types.append(typeInfo);
+        typeInfo.prettyPrint(.{});
+        std.debug.print("\n", .{});
+    }
+
+    return rv;
+}
+
+pub fn deinit(self: *Self) void {
+    var i: usize = 0;
+    while (i < self.types.items.len) {
+        self.types.items[i].deinit(.{});
+        i += 1;
+    }
+    self.types.deinit();
+    self.typesByLabel.deinit();
+}
+
+test "030-TypeDatabase" {
+    var db = try Self.init(std.testing.allocator);
+    defer db.deinit();
+}
