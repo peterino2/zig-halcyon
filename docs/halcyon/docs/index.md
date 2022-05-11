@@ -12,9 +12,9 @@ Here's what we aim to provide. By v0.5.0.
 
 ```
 George: Hello! how are you?
-    Emilia > I'm doing great!
+    > Emilia: I'm doing great!
         George: Wonderful!
-    Emilia > Uhh not so well.
+    > Emilia: Uhh not so well.
         George: Huh, well why don't you tell me what's going on?
         @goto emilia_explains_her_problem
 ```
