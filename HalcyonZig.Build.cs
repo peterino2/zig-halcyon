@@ -3,16 +3,16 @@
 using System.IO;
 using UnrealBuildTool;
 
-public class HalcyonLibrary : ModuleRules
+public class HalcyonZig : ModuleRules
 {
-	public HalcyonLibrary(ReadOnlyTargetRules Target) : base(Target)
+	public HalcyonZig(ReadOnlyTargetRules Target) : base(Target)
 	{
 		Type = ModuleType.External;
 
 		if (Target.Platform == UnrealTargetPlatform.Win64)
 		{
 			// Add the import library
-			PublicAdditionalLibraries.Add(Path.Combine(ModuleDirectory, "x64", "Release", "Halcyon.lib"));
+			PublicAdditionalLibraries.Add(Path.Combine(ModuleDirectory, "zig-out", "lib", "Halcyon.lib"));
 
 			// Delay-load the DLL, so we can load it from the right place first
 			PublicDelayLoadDLLs.Add("Halcyon.dll");

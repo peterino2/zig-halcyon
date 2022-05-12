@@ -18,12 +18,13 @@ pub fn build(b: *std.build.Builder) void {
     c_test.linkLibCpp();
     const c_test_run = c_test.run();
 
-    const halcShared = b.addSharedLibrary("zig_halcyon", "src/c_api.zig", b.version(0, 0, 1));
+    const halcShared = b.addStaticLibrary("Halcyon", "src/c_api.zig"); //, b.version(0, 0, 1));
     halcShared.setTarget(target);
     halcShared.setBuildMode(mode);
     halcShared.addIncludeDir("src/c_api/inc");
     halcShared.linkLibCpp();
     halcShared.linkLibC();
+    halcShared.bundle_compiler_rt = true;
     halcShared.install();
 
     c_test.linkLibrary(halcShared);

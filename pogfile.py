@@ -6,9 +6,12 @@
 
 # autoindex = False # change this to true to automatically search for pogfile.py in inferior directories.
 
-@job(desc="Hello World job, this is the toplevel default target")
-def top():
+@job(desc="Build Halcyon shared library")
+def Halcyon():
+    print("invoking zig build")
     env.run("zig", "build")
     os.makedirs(os.path.join(orig_dir, '../../../Binaries/ThirdParty/Halcyon/'), exist_ok = True)
-    env.system("cp -r ./zig-out/lib/* " + os.path.join(orig_dir, '../../../Binaries/ThirdParty/Halcyon/'))
+    exestr = "cp -r ./zig-out/lib/* " + os.path.abspath(os.path.join(orig_dir, '../../../Binaries/ThirdParty/Halcyon/'))
+    print(exestr)
+    env.system(exestr)
 
