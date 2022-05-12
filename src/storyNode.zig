@@ -80,7 +80,7 @@ pub const NodeType = enum(u8) {
     Response,
 };
 
-const StoryNodesError = error{ InstancesNotExistError, GeneralError };
+pub const StoryNodesError = error{ InstancesNotExistError, GeneralError };
 
 const FactVarTypes = enum {
     BoolType,
@@ -127,7 +127,7 @@ const BranchNode = struct {
     // todo
 };
 
-const StoryNodes = struct {
+pub const StoryNodes = struct {
     instances: ArrayList(Node),
     textContent: ArrayList(NodeString),
 
