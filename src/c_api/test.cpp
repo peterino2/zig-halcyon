@@ -10,17 +10,18 @@ int main(int argc, char** argv)
     setvbuf(stdout, nullptr, _IOFBF, 1000);
     std::cout << "hello world" << std::endl;
 
-    halc_do_parse(
+    HalcStory story;
+
+    HalcStory_Parse(
         "[hello]\n"
         "wanker: fuck you\n"
         "personA: fuck you too\n"
         "    > I hate you: \n"
-        "        wanker: fuck you mate"
+        "        wanker: fuck you mate",
+        &story
     );
 
-    thick_c_handle_t x;
-    
-    auto i = halc_test_struct(&x);
+    HalcStory_CreateInteractorFromStart(&story);
 
-    std::cout << "😍😍😍😍😍😍😍" << i << " " << x.buf << std::endl;
+    HalcStory_Destroy(&story);
 }

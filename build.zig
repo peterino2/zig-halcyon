@@ -18,16 +18,37 @@ pub fn build(b: *std.build.Builder) void {
     c_test.linkLibCpp();
     const c_test_run = c_test.run();
 
-    const halcShared = b.addStaticLibrary("Halcyon", "src/c_api.zig"); //, b.version(0, 0, 1));
-    halcShared.setTarget(target);
-    halcShared.setBuildMode(mode);
-    halcShared.addIncludeDir("src/c_api/inc");
-    halcShared.linkLibCpp();
-    halcShared.linkLibC();
-    halcShared.bundle_compiler_rt = true;
-    halcShared.install();
+    if (false) {
+        const halcShared = b.addSharedLibrary(
+            "Halcyon",
+            "src/c_api.zig",
+            b.version(0, 0, 1),
+        );
+        halcShared.setTarget(target);
+        halcShared.setBuildMode(mode);
+        halcShared.addIncludeDir("src/c_api/inc");
+        // halcShared.linkLibCpp();
+        halcShared.linkLibC();
+        // halcShared.linkSystemLibrary("vcruntime.lib");
+        // halcShared.bundle_compiler_rt = true;
+        halcShared.install();
 
-    c_test.linkLibrary(halcShared);
+        c_test.linkLibrary(halcShared);
+    } else {
+        const halcShared = b.addStaticLibrary(
+            "Halcyon",
+            "src/c_api.zig",
+        );
+        halcShared.setTarget(target);
+        halcShared.setBuildMode(mode);
+        halcShared.addIncludeDir("src/c_api/inc");
+        halcShared.linkLibCpp();
+        halcShared.linkLibC();
+        halcShared.bundle_compiler_rt = true;
+        halcShared.install();
+
+        c_test.linkLibrary(halcShared);
+    }
 
     const exe_tests = b.addTest("src/main.zig");
     exe_tests.setTarget(target);
