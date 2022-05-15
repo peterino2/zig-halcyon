@@ -13,59 +13,53 @@ extern "C" {
 #endif
 
 typedef struct halc_nodes_t halc_nodes_t;
+typedef struct halc_interactor_t halc_interactor_t;
+typedef struct halc_strings_array_t halc_strings_array_t;
 
 typedef struct HalcString {
     size_t len;
-    char* utf8;
+    const char* utf8;
 } HalcString;
 
 // fat pointer with info
 typedef struct HalcStory {
     size_t num_nodes;
     halc_nodes_t* nodes;
-} HalcStory;
+}HalcStory;
 
 // returns 0 on success
-EXPORT_API int HalcStory_Parse(const char* cstr, HalcStory* story);
+EXPORT_API int HalcStory_Parse(HalcString str, struct HalcStory* story);
 
-EXPORT_API void HalcStory_Destroy(HalcStory* story);
+EXPORT_API void HalcStory_Destroy(struct HalcStory* story);
 
 // fat pointer with info
 typedef struct HalcInteractor {
-    uint32_t id;
+    size_t id;
+    halc_interactor_t* interactor;
 } HalcInteractor;
 
 // returns 0 on success
 EXPORT_API int HalcStory_CreateInteractorFromStart(
-    HalcStory*story,
-    HalcInteractor* interactor,
-    );
+    struct HalcStory* story,
+    HalcInteractor* interactor);
 
-// retursn 0 on success
-EXPORT_API int HalcStory_CreateInteractor(
-    HalcStory*story,
-    HalcInteractor* interactor,
-    const char* start_label);
-
-EXPORT_API void HalcInteractor_GetStoryText(
-    HalcStory* story,
+// returns 0 on success
+EXPORT_API int HalcInteractor_GetStoryText(
     const HalcInteractor* interactor,
     HalcString* ostr);
     
 EXPORT_API void HalcInteractor_GetSpeaker(
-    HalcStory* story,
     const HalcInteractor* interactor,
     HalcString* ostr);  
 
 // returns the ID of the next node we traveled to. returns -1 if we reached the end of the story.
 EXPORT_API int HalcInteractor_Next(
-    HalcStory* story,
     HalcInteractor* interactor);
     
 typedef struct HalcChoicesList {
     size_t len;
-    uint32_t* ids;
-    const char** strings;
+    HalcString* strings;
+    halc_strings_array_t* handle;
 } HalcChoicesList;
 
 EXPORT_API void HalcChoicesList_Destroy(
@@ -73,13 +67,11 @@ EXPORT_API void HalcChoicesList_Destroy(
 
 // returns the number of choices
 EXPORT_API int HalcInteractor_GetChoices(
-    HalcStory* story,
-    const HalcInteractor* interactor,
+    HalcInteractor* interactor,
     HalcChoicesList* list);
 
 // returns the ID of the next node we traveled to. returns -1 if we reached the end of the story.
 EXPORT_API int HalcInteractor_SelectChoice(
-    HalcStory* story,
     HalcInteractor* interactor,
     size_t choice);
 
@@ -87,5 +79,4 @@ EXPORT_API int HalcInteractor_SelectChoice(
 #ifdef __cplusplus
 }
 #endif
-
 

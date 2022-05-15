@@ -63,6 +63,7 @@ pub const NodeString = struct {
         };
 
         _ = try rv.string.appendSlice(text);
+        _ = try rv.string.append(0); // null terminated, for C's pleasure
         return rv;
     }
 
@@ -286,9 +287,17 @@ pub const StoryNodes = struct {
     pub fn addSpeaker(self: *Self, node: Node, speaker: NodeString) !void {
         try self.speakerName.put(node, speaker);
     }
+
+    pub fn getStoryText(self: Self, id: usize) ![]const u8 {
+        return self.textContent.items[id].asUtf8Native();
+    }
+
+    pub fn getSpeakerName(self: Self, id: usize) ![]const u8 {
+        return self.speakerName.items[id].asUtf8Native();
+    }
 };
 
-const ParserError = error{ GeneralParserError, UnexpectedTokenError };
+const ParserError = error{ GeneralParserError, UnexpectedTokenError, NoNextNodeError };
 
 pub fn parserPanic(e: ParserError, message: []const u8) !void {
     std.debug.print("Parser Error!: {s}", .{message});
@@ -342,6 +351,24 @@ pub const Interactor = struct {
     pub fn displayCurrentContent(self: Self) void {
         const str = if (self.story.speakerName.get(self.node)) |speaker| speaker.asUtf8Native() else "narrator";
         std.debug.print("{d}> {s}: {s}\n", .{ self.node.id, str, self.story.textContent.items[self.node.id].asUtf8Native() });
+    }
+
+    pub fn getCurrentStoryText(self: Self) []const u8 {
+        return try self.story.textContent.items[self.node.id].asUtf8Native();
+    }
+
+    pub fn getCurrentSpeaker(self: Self) []const u8 {
+        const str = if (self.story.speakerName.get(self.node)) |speaker| try speaker.asUtf8Native() else "narrator";
+        return str;
+    }
+
+    pub fn next(self: *Self) !void {
+        var story = self.story;
+        if (story.nextNode.contains(self.node)) {
+            self.node = story.nextNode.get(self.node).?;
+            return;
+        }
+        return ParserError.NoNextNodeError;
     }
 
     pub fn iterateChoicesList(self: *Self, iter: []const usize) !void {
