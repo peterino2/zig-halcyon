@@ -8,13 +8,13 @@
 
 @job()
 def clean():
-    env.run("git", "clean", "." ,"-dxff")
+    env.run('rm', '-rf', 'zig-cache', 'zig-out')
 
 
 @job(desc="Build Halcyon shared library")
 def Halcyon():
     print("invoking zig build")
-    env.run("zig", "build", "--verbose-link", "-Dtarget=x86_64-windows-msvc", "-Drelease-fast")
+    env.run("zig", "build", "--verbose-link", "-Dtarget=x86_64-windows-msvc",)
     os.makedirs(os.path.join(orig_dir, '../../../Binaries/ThirdParty/Halcyon/'), exist_ok = True)
     exestr = "cp -r ./zig-out/lib/* " + os.path.abspath(os.path.join(orig_dir, '../../../Binaries/ThirdParty/Halcyon/'))
     print(exestr)

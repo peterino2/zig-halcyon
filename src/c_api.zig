@@ -17,7 +17,8 @@ const HalcInteractor = c.HalcInteractor;
 const HalcChoicesList = c.HalcChoicesList;
 
 const Interactor = s.Interactor;
-const allocator = std.heap.c_allocator;
+var allocStruct = std.heap.GeneralPurposeAllocator(.{}){};
+const allocator = allocStruct.allocator();
 
 const Cstr = ?[*:0]const u8;
 const Cstr_checked = [*:0]const u8;
@@ -63,6 +64,7 @@ export fn HalcStory_Destroy(story: ?*c.HalcStory) void {
     if (story != null) {
         story.?.num_nodes = 0;
         var nodes = GetStoryNodesFromHandle(story.?);
+        nodes.?.deinit();
         if (nodes != null)
             allocator.destroy(nodes.?);
     }

@@ -27,10 +27,13 @@ pub fn build(b: *std.build.Builder) void {
         halcShared.setTarget(target);
         halcShared.setBuildMode(mode);
         halcShared.addIncludeDir("src/c_api/inc");
+        halcShared.setLibCFile(std.build.FileSource{ .path = "libc.txt" });
         // halcShared.linkLibCpp();
-        halcShared.linkLibC();
-        // halcShared.linkSystemLibrary("vcruntime.lib");
-        // halcShared.bundle_compiler_rt = true;
+        // halcShared.linkLibC();
+        // halcShared.linkSystemLibraryName("vcruntime");
+        // halcShared.linkSystemLibraryName("ucrt");
+        // halcShared.linkSystemLibraryName("msvcrt");
+        halcShared.bundle_compiler_rt = true;
         halcShared.install();
 
         c_test.linkLibrary(halcShared);
@@ -42,9 +45,6 @@ pub fn build(b: *std.build.Builder) void {
         halcShared.setTarget(target);
         halcShared.setBuildMode(mode);
         halcShared.addIncludeDir("src/c_api/inc");
-        halcShared.linkLibCpp();
-        halcShared.linkLibC();
-        halcShared.bundle_compiler_rt = true;
         halcShared.install();
 
         c_test.linkLibrary(halcShared);

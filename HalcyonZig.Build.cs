@@ -13,12 +13,16 @@ public class HalcyonZig : ModuleRules
 		{
 			// Add the import library
 			PublicAdditionalLibraries.Add(Path.Combine(ModuleDirectory, "zig-out", "lib", "Halcyon.lib"));
+			// PublicSystemLibraries.Add("ucrt.lib");
+			PublicSystemLibraries.Add("ntdll.lib");
+			// PublicSystemLibraries.Add("msvcrt.lib");
+			// PublicSystemLibraries.Add("vcruntime.lib");
 
 			// Delay-load the DLL, so we can load it from the right place first
-			PublicDelayLoadDLLs.Add("Halcyon.dll");
+			// PublicDelayLoadDLLs.Add("Halcyon.dll");
 
 			// Ensure that the DLL is staged along with the executable
-			RuntimeDependencies.Add("$(PluginDir)/Binaries/ThirdParty/zig-halcyon/zig-out/lib/Halcyon.dll");
+			// RuntimeDependencies.Add("$(PluginDir)/Binaries/ThirdParty/zig-halcyon/zig-out/lib/Halcyon.dll");
         }
         else if (Target.Platform == UnrealTargetPlatform.Mac)
         {

@@ -24,8 +24,6 @@ int main(int argc, char** argv)
         "        @goto hello\n"
         "wanker: fuck you";
 
-
-
     HalcStory_Parse(
             HalcString{
             sizeof(str)/sizeof(str[0]),

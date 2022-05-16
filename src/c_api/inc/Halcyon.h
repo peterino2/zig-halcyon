@@ -1,15 +1,25 @@
 #pragma once
 
+// typedef unsigned long long size_t;
 #include <stdint.h>
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
+
 #ifdef WIN32
+
+#ifndef IMPORT_HALCYON_API
 #define EXPORT_API __declspec(dllexport)
 #else 
+#define EXPORT_API __declspec(dllimport)
+#endif
+
+#else 
+
 #define EXPORT_API 
+
 #endif
 
 typedef struct halc_nodes_t halc_nodes_t;
