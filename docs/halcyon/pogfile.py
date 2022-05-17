@@ -8,7 +8,8 @@
 
 @job(desc="Hello World job, this is the toplevel default target")
 def make_release():
-    env.system('mkdocs build')
-    env.run("git", "add", '-u', cwd='./site')
+    env.system('make html')
+    env.system('cp -rf ./build/html/* ./site')
+    env.run("git", "add", '-A', cwd='./site')
     env.run("git", "commit", '-m', 'automatic build', cwd='./site')
     env.run("git", "push", '-u', 'origin', cwd='./site')

@@ -1,3 +1,16 @@
+---
+title: Timeline
+date: 2022-05-05
+author: Peterino
+category: Implementation
+tags: 
+    - Zig
+    - Low level programming
+state: preview
+references: test.md
+template: template.html
+...
+
 ## Timeline
 
 - v0.0.1 Parser and basic story nodes generation

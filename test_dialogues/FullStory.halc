@@ -79,26 +79,26 @@
 
 [hello]
 @if(PersonA.isPissedOff)
-PersonA: Can you fuck off?
+PersonA: Can you flip off?
 @else
 PersonA: Hello!
     > I hate you:
         @setVar(PersonA.isPissedOff = true)
-        PersonA: Well fuck you bud.
+        PersonA: Well flip you bud.
     > Hello:
         @goto hello
 
 // these labels can be qualified with decorators
 [talk_to_grace; @once(grace)]
-    $: She's hunched over her meal, barely making any effort to eat.
-    Grace: Huh?... Oh I'm sorry I didn't quite see you there.
-    Grace: I guess I'm a bit distracted
+    $: She is hunched over her meal, barely making any effort to eat.
+    Grace: Huh?... Oh I am sorry I didnt quite see you there.
+    Grace: I guess I am a bit distracted
     [talk_to_grace_eating]
-        > Is everything alright? You're hardly eating.
+        > Is everything alright? You are hardly eating.
             @todo
         > Hear any interesting rumors?
             $: She sheepishly avoids your eye contact and resumes forking through her plate.
-            Grace: Sorry... I don't really have any rumors. I'm just trying to eat here ok?
+            Grace: Sorry... I dont really have any rumors. Im just trying to eat here ok?
             @goto talk_to_grace_eating
         @if( p.canParticiate(Dean) and p.party.contains(Dean) )
         Dean > I can tell whenever a beautiful woman is in distress! Tell me fair lady, what distresses your beautiful heart so?
@@ -107,7 +107,7 @@ PersonA: Hello!
         @if( q.redRoomQuest.undiscoveredPhase.barkeeper_says_grace_knows_something )
         > Word is you know what happened in the red room last thursday.
             $: Her droop sadly.
-            Grace: I- I- don't know what I saw. I can tell you but... it's complicated.
+            Grace: I- I- dont know what I saw. I can tell you but... its complicated.
 
 [dean_talk_to_grace; @requires(g.canParticiate(Dean))]
     // the c namespace is also global but specifically exists for that one character.

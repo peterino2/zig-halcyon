@@ -11,19 +11,44 @@ pub fn build(b: *std.build.Builder) void {
     // between Debug, ReleaseSafe, ReleaseFast, and ReleaseSmall.
     const mode = b.standardReleaseOptions();
 
-    const exe = b.addExecutable("zig_halcyon", "src/main.zig");
-    exe.setTarget(target);
-    exe.setBuildMode(mode);
-    exe.install();
+    const c_test = b.addExecutable("c_test", null);
+    c_test.addCSourceFile("src/c_api/test.cpp", &.{});
+    c_test.addIncludeDir("src/c_api/inc");
+    c_test.linkLibC();
+    c_test.linkLibCpp();
+    const c_test_run = c_test.run();
 
-    const run_cmd = exe.run();
-    run_cmd.step.dependOn(b.getInstallStep());
-    if (b.args) |args| {
-        run_cmd.addArgs(args);
+    if (false) {
+        const halcShared = b.addSharedLibrary(
+            "Halcyon",
+            "src/c_api.zig",
+            b.version(0, 0, 1),
+        );
+        halcShared.setTarget(target);
+        halcShared.setBuildMode(mode);
+        halcShared.addIncludeDir("src/c_api/inc");
+        halcShared.setLibCFile(std.build.FileSource{ .path = "libc.txt" });
+        // halcShared.linkLibCpp();
+        // halcShared.linkLibC();
+        // halcShared.linkSystemLibraryName("vcruntime");
+        // halcShared.linkSystemLibraryName("ucrt");
+        // halcShared.linkSystemLibraryName("msvcrt");
+        halcShared.bundle_compiler_rt = true;
+        halcShared.install();
+
+        c_test.linkLibrary(halcShared);
+    } else {
+        const halcShared = b.addStaticLibrary(
+            "Halcyon",
+            "src/c_api.zig",
+        );
+        halcShared.setTarget(target);
+        halcShared.setBuildMode(mode);
+        halcShared.addIncludeDir("src/c_api/inc");
+        halcShared.install();
+
+        c_test.linkLibrary(halcShared);
     }
-
-    const run_step = b.step("run", "Run the app");
-    run_step.dependOn(&run_cmd.step);
 
     const exe_tests = b.addTest("src/main.zig");
     exe_tests.setTarget(target);
@@ -31,4 +56,5 @@ pub fn build(b: *std.build.Builder) void {
 
     const test_step = b.step("test", "Run unit tests");
     test_step.dependOn(&exe_tests.step);
+    test_step.dependOn(&c_test_run.step);
 }
