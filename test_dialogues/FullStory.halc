@@ -79,12 +79,12 @@
 
 [hello]
 @if(PersonA.isPissedOff)
-PersonA: Can you fuck off?
+PersonA: Can you flip off?
 @else
 PersonA: Hello!
     > I hate you:
         @setVar(PersonA.isPissedOff = true)
-        PersonA: Well fuck you bud.
+        PersonA: Well flip you bud.
     > Hello:
         @goto hello
 

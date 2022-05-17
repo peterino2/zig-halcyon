@@ -13,16 +13,16 @@ int main(int argc, char** argv)
     HalcStory story;
     const char str[] = 
         "[hello]\n"
-        "wanker: fuck you\n"
-        "personA: fuck you too\n"
+        "wanker: flip you\n"
+        "personA: flip you too\n"
         "    > I hate you: \n"
-        "        wanker: fuck you mate\n"
+        "        wanker: flip you mate\n"
         "    > I hate your dog: \n"
         "        wanker: I like your cat\n"
         "    > blow me: \n"
         "        wanker: alright lets do this\n"
         "        @goto hello\n"
-        "wanker: fuck you";
+        "wanker: flip you";
 
     HalcStory_Parse(
             HalcString{

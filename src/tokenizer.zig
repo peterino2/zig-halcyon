@@ -116,12 +116,12 @@ pub const easySampleData =
     \\[hello]
     \\# this a seperated comment
     \\@if(PersonA.isPissedOff)
-    \\     PersonA: Can you fuck off? #
+    \\     PersonA: Can you flip off? #
     \\@else
     \\    PersonA: Hello!
     \\        > I hate you
     \\            @set(PersonA.isPissedOff = true)
-    \\            PersonA: Well fuck you bud.
+    \\            PersonA: Well flip you bud.
     \\        > Hello
     \\            @debugPrint("Hello world!") # this is an execution
     \\            @goto hello
@@ -136,12 +136,12 @@ pub const sampleData =
     \\# this is testing the comments at the start
     \\[hello]
     \\@if(PersonA.isPissedOff)
-    \\PersonA: Can you fuck off? # testing comment inline
+    \\PersonA: Can you flip off? # testing comment inline
     \\@else
     \\PersonA: Hello!
     \\    > I hate you:
     \\        @set(PersonA.isPissedOff = true)
-    \\        PersonA: Well fuck you bud.
+    \\        PersonA: Well flip you bud.
     \\    > Hello:
     \\        @goto hello
     \\# you can add comments with #
@@ -445,5 +445,5 @@ test "Tokenizing test" {
     defer stream.deinit();
 
     // skipping the ast stage will make things easier but could possibly make things more difficult later..
-    // ehh fuck it.
+    // ehh flip it.
 }
