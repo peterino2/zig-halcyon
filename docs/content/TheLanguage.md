@@ -1,3 +1,16 @@
+---
+title: Language Overview
+date: 2022-05-05
+author: Peterino
+category: Implementation
+tags: 
+    - Zig
+    - Low level programming
+state: posted
+references: test.md
+template: template.html
+...
+
 # The language
 The scripting language is loosely inspired by renpy. To declare a stream of dialogue, simply write it like thus.
 
@@ -94,12 +107,7 @@ PersonA: I am pissed off
 PersonA: I will say this line regardless of if I'm pissed off or not.
 ```
 
-```mermaid
-graph TD;
-    A[PersonA: Hello! Great day..] --> B[PersonB: Man.. I really..];
-    B-->C[PersonA: Haha you sure got me..];
-    C-->D[PersonB: Get the hell away from..];
-```
+<center><img  src="$ASSETPATH()/Lang_0.png" class="centerImage" width ="300"></center>
 
 ```
 @if(PersonA_is_pissed)
@@ -108,10 +116,5 @@ graph TD;
 PersonA: I will say this line regardless of if I'm pissed off or not.
 ```
 
-```mermaid
-graph TD;
-    A[if] --> B[PersonA: I am really pissed off..];
-    B --> D[PersonB: If you're pissed off so am I!];
-    D --> C[PersonB: I will say this..];
-    A --> |else| C;
-```
+
+<center><img  src="$ASSETPATH()/Lang_1.png" class="centerImage" width ="300"></center>
