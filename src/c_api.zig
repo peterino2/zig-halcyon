@@ -23,6 +23,13 @@ const allocator = allocStruct.allocator();
 const Cstr = ?[*:0]const u8;
 const Cstr_checked = [*:0]const u8;
 
+export fn HalcInteractor_Destroy(handle: ?*HalcInteractor) void {
+    var interactor = GetInteractorFromHandle(handle);
+    interactor.?.*.deinit();
+
+    allocator.destroy(interactor.?);
+}
+
 export fn HalcStory_Parse(str: HalcString, ret: ?*c.HalcStory) c_int {
     if (ret == null) return -1;
 
@@ -116,10 +123,19 @@ export fn HalcInteractor_GetSpeaker(
 export fn HalcInteractor_Next(
     interactor: ?*HalcInteractor,
 ) c_int {
-    if (interactor == null) return -1;
+    if (interactor == null) {
+        std.debug.print("Invalid Interactor passed in \n", .{});
+        return -1;
+    }
     var i = GetInteractorFromHandle(interactor);
-    if (i == null) return -1;
-    i.?.*.next() catch return -1;
+    if (i == null) {
+        std.debug.print("Unable to get valid interactor from handle \n", .{});
+        return -1;
+    }
+    i.?.*.next() catch {
+        std.debug.print("Unable to go next for some reason...\n", .{});
+        return -1;
+    };
     interactor.?.*.id = i.?.node.id;
     return @intCast(c_int, i.?.node.id);
 }
@@ -171,8 +187,9 @@ export fn HalcInteractor_GetChoices(
         choices.?.* = .{
             .len = halcStrings.items.len,
             .strings = &halcStrings.items[0],
-            .handle = @ptrCast(*c.halc_strings_array_t, handle),
+            .handle = @ptrCast(*c.halc_strings_array_t, @alignCast(@alignOf(ArrayList(HalcString)), handle)),
         };
+        return @intCast(c_int, halcStrings.items.len);
     }
     return 0;
 }
@@ -202,9 +219,10 @@ export fn HalcInteractor_SelectChoice(
 }
 
 export fn HalcChoicesList_Destroy(list: ?*HalcChoicesList) void {
-    var x = GetArrayListFromChoices(list.?).?;
-    x.deinit();
-    allocator.destroy(x);
+    _ = list;
+    // var x = GetArrayListFromChoices(list.?).?;
+    // x.deinit();
+    // allocator.destroy(x);
 }
 
 // export fn halc_do_parse(cstr: ?[*:0]const u8) usize {

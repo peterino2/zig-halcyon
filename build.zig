@@ -45,8 +45,8 @@ pub fn build(b: *std.build.Builder) void {
         halcShared.setTarget(target);
         halcShared.setBuildMode(mode);
         halcShared.addIncludeDir("src/c_api/inc");
+        halcShared.linkLibC();
         halcShared.install();
-
         c_test.linkLibrary(halcShared);
     }
 

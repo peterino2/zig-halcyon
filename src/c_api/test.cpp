@@ -11,18 +11,18 @@ int main(int argc, char** argv)
     std::cout << "hello world" << std::endl;
 
     HalcStory story;
-    const char str[] = 
-        "[hello]\n"
-        "wanker: flip you\n"
-        "personA: flip you too\n"
-        "    > I hate you: \n"
-        "        wanker: flip you mate\n"
-        "    > I hate your dog: \n"
-        "        wanker: I like your cat\n"
-        "    > blow me: \n"
-        "        wanker: alright lets do this\n"
-        "        @goto hello\n"
-        "wanker: flip you";
+ 		const char str[] = 
+			 "[hello]\n"
+			 "Dude: Hey man how's it going?\n"
+			 "$: You notice that the nice man is talking to you\n"
+			 "    > Praise him: \n"
+			 "        Dude: Damn dude thanks so much for your compliment :D\n"
+			 "    > Call him something bad: \n"
+			 "        Dude: Wow you really hurt my feelings\n"
+			 "    > Can we start over?: \n"
+			 "        Dude: Of course! I'll take this convo back to the start\n"
+			 "        @goto hello\n"
+			 "$: End of the story";
 
     HalcStory_Parse(
             HalcString{

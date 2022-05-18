@@ -367,8 +367,10 @@ pub const Interactor = struct {
         if (story.nextNode.contains(self.node)) {
             self.node = story.nextNode.get(self.node).?;
             return;
+        } else {
+            self.node = Node{ .id = 0 };
+            return;
         }
-        return ParserError.NoNextNodeError;
     }
 
     pub fn iterateChoicesList(self: *Self, iter: []const usize) !void {

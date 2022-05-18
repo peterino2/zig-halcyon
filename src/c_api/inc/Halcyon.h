@@ -1,7 +1,6 @@
 #pragma once
 
-// typedef unsigned long long size_t;
-#include <stdint.h>
+typedef unsigned long long size_t;
 
 #ifdef __cplusplus
 extern "C" {
@@ -60,7 +59,10 @@ EXPORT_API int HalcInteractor_GetStoryText(
     
 EXPORT_API void HalcInteractor_GetSpeaker(
     const HalcInteractor* interactor,
-    HalcString* ostr);  
+    HalcString* ostr);
+    
+EXPORT_API void HalcInteractor_Destroy(
+    const HalcInteractor* interactor);  
 
 // returns the ID of the next node we traveled to. returns -1 if we reached the end of the story.
 EXPORT_API int HalcInteractor_Next(
