@@ -57,9 +57,10 @@ int main(int argc, char** argv)
     {
         HalcChoicesList choicesList;
 
-        HalcInteractor_GetChoices(&i, &choicesList);
+        int result = HalcInteractor_GetChoices(&i, &choicesList);
+
         printf("addr of choicesList: 0x%x\n", choicesList.handle);
-        
+
         std::cout << "got choices (count = " << choicesList.len << ")" << std::endl;
 
         for(int i = 0; i < choicesList.len; i++)
@@ -67,9 +68,10 @@ int main(int argc, char** argv)
             auto str = choicesList.strings[i];
             std::cout << "  - " << str.utf8 << " (len = " << str.len << ")" << std::endl;
         }
-
-
-        HalcChoicesList_Destroy(&choicesList);
+        if(result != -1)
+        {
+            HalcChoicesList_Destroy(&choicesList);
+        }
     }
 
     HalcInteractor_SelectChoice(&i, 2);

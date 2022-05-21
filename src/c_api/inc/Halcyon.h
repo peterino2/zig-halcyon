@@ -6,6 +6,7 @@ typedef unsigned long long size_t;
 extern "C" {
 #endif
 
+#define HALCYON_RESULT_ERROR -1
 
 #ifdef WIN32
 
@@ -35,6 +36,7 @@ typedef struct HalcStory {
     size_t num_nodes;
     halc_nodes_t* nodes;
 }HalcStory;
+
 
 // returns 0 on success
 EXPORT_API int HalcStory_Parse(HalcString str, struct HalcStory* story);

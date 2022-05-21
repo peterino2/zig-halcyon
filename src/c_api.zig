@@ -176,6 +176,7 @@ export fn HalcInteractor_GetChoices(
             }) catch {
                 std.debug.print("unable to append strings", .{});
                 halcStrings.deinit();
+                return -1;
             };
         }
 
@@ -192,7 +193,7 @@ export fn HalcInteractor_GetChoices(
         };
         return @intCast(c_int, halcStrings.items.len);
     }
-    return 0;
+    return -1;
 }
 
 export fn HalcInteractor_SelectChoice(
