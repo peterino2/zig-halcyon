@@ -18,7 +18,7 @@ pub fn build(b: *std.build.Builder) void {
     c_test.linkLibCpp();
     const c_test_run = c_test.run();
 
-    if (false) {
+    if (true) {
         const halcShared = b.addSharedLibrary(
             "Halcyon",
             "src/c_api.zig",
