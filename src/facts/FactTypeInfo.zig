@@ -1,6 +1,7 @@
 const std = @import("std");
 const values = @import("values.zig");
 const utils = @import("factUtils.zig");
+const TypeDatabase = @import("TypeDatabase.zig");
 
 const ArrayList = std.ArrayList;
 const Initializer = values.Initializer;
@@ -13,6 +14,7 @@ value: struct {
     name: ArrayList(u8), // string value
     defaultValues: ArrayList(Initializer),
     typeTag: BuiltinFactTypes,
+    typeDataBase: *TypeDatabase = undefined,
 },
 
 pub fn getLabel(self: Self) utils.Label {
