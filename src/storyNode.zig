@@ -264,18 +264,6 @@ pub fn parserPanic(e: ParserError, message: []const u8) !void {
     return e;
 }
 
-// 0xee0201
-//     0x03
-// add 2 1
-// 0xee0201
-//
-// int main() {
-//  printf("hello world");
-// }
-//
-//
-//
-
 pub const Interactor = struct {
     story: *const StoryNodes,
     node: Node,

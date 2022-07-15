@@ -86,8 +86,9 @@ pub const FactDatabase = struct {
         var l: *const FactValue = &BadVal;
         var r: *const FactValue = &BadVal;
 
-        if (self.factsByLabel.contains(left.hash)) {}
-        l = self.getFactByLabel(left).?;
+        if (self.factsByLabel.contains(left.hash)) {
+            l = self.getFactByLabel(left).?;
+        }
         if (self.factsByLabel.contains(right.hash)) {
             r = self.getFactByLabel(right).?;
         }
@@ -157,7 +158,7 @@ test "FactsDatabase" {
     try expect(factDb.data.items.len == 3);
     // try std.testing.expect(factDb.data.items[0].compareEq(factDb.data.items[1], factDb.allocator));
     try expect(variable.compareEq(variable2.*, factDb.allocator));
-    try expect(try factDb.compareEq(MakeLabel("var"), MakeLabel("var2")));
+    try expect(try factDb.compareEq(MakeLabel("variable"), MakeLabel("variable2")));
     try expect(try factDb.compareNe(MakeLabel("variable3"), MakeLabel("variable2")));
     try expect(try factDb.compareLe(MakeLabel("variable3"), MakeLabel("variable2")));
     try expect(try factDb.compareLt(MakeLabel("variable3"), MakeLabel("variable2")));
@@ -180,4 +181,6 @@ test "FactsDatabase" {
 
     try expect(try factDb.compareGe(MakeLabel("variable2"), MakeLabel("variable3")));
     try expect(try factDb.compareEq(MakeLabel("variable4"), MakeLabel("variable3")));
+
+    try expect(try factDb.compareNe(MakeLabel("badRef"), MakeLabel("variable2")));
 }
