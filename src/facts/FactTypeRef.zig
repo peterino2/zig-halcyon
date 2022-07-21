@@ -1,6 +1,10 @@
 const std = @import("std");
+const TypeDatabase = @import("TypeDatabase.zig");
 
-value: struct {},
+value: struct {
+    typeRef: usize,
+    typeDataBase: *TypeDatabase = undefined,
+},
 
 // required functions
 pub fn prettyPrint(self: @This(), _: anytype) void {

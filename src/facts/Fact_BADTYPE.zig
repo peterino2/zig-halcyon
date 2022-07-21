@@ -15,4 +15,14 @@ pub fn prettyPrint(_: @This(), indentLevel: anytype) void {
     return std.debug.print("BAD_TYPE", .{});
 }
 
+pub fn compareEq(_: @This(), right: anytype) bool {
+    _ = right;
+    return false;
+}
+
+pub fn compareNe(_: @This(), right: anytype) bool {
+    _ = right;
+    return true;
+}
+
 pub fn deinit(_: *@This(), _: anytype) void {}
