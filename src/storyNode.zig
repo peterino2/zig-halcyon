@@ -12,6 +12,19 @@ pub const storyEndLabel = "@__STORY_END__";
 const assert = std.debug.assert;
 const ParserPrint = std.debug.print;
 
+pub const ParserWarningOrError = ParserError || ParserWarning || StoryNodesError;
+pub const StoryNodesError = error{ InstancesNotExistError, GeneralError };
+
+const ParserError = error{
+    GeneralParserError,
+    UnexpectedTokenError,
+    NoNextNodeError,
+};
+
+const ParserWarning = error{
+    DuplicateLabelWarning,
+};
+
 pub const Node = struct {
     id: usize = 0,
     generation: u32 = 0,
@@ -78,15 +91,6 @@ pub const NodeString = struct {
 
 pub const NodeStringView = []const u8;
 
-pub const NodeType = enum(u8) {
-    Dead, // set to this to effectively mark this node as dead
-    Text,
-    Response,
-};
-
-pub const StoryNodesError = error{ InstancesNotExistError, GeneralError };
-
-
 pub const BranchNode = struct {};
 
 pub const NodeData = struct {
@@ -103,6 +107,7 @@ pub const StoryNodes = struct {
     passThrough: ArrayList(bool),
 
     nodes: ArrayList(NodeData),
+
     speakerName: AutoHashMap(Node, NodeString),
     conditionalBlock: AutoHashMap(Node, BranchNode),
     choices: AutoHashMap(Node, ArrayList(Node)),
@@ -128,7 +133,8 @@ pub const StoryNodes = struct {
             .nextNode = AutoHashMap(Node, Node).init(allocator),
             .tags = std.StringHashMap(Node).init(allocator),
             .conditionalBlock = AutoHashMap(Node, BranchNode).init(allocator),
-            .explicitLink = std.AutoHashMap(Node, void).init(allocator),
+            .explicitLink = AutoHashMap(Node, void).init(allocator),
+            .nodes = ArrayList(NodeData).init(allocator),
         };
         var node = rv.newNodeWithContent("@__STORY_END__", allocator) catch unreachable;
         rv.setLabel(node, "@__STORY_END__") catch unreachable;
@@ -207,7 +213,7 @@ pub const StoryNodes = struct {
     pub fn setLabel(self: *Self, id: Node, label: []const u8) !void {
         //ParserPrint("SettingLabel  {s}!!\n\n", .{label});
         if (self.tags.contains(label)) {
-            return ParserError.DuplicateLabelError;
+            return ParserWarning.DuplicateLabelWarning;
         }
         try self.tags.put(label, id);
     }
@@ -274,21 +280,8 @@ pub const StoryNodes = struct {
     }
 };
 
-pub const ParserWarningOrError = ParserError | ParserWarning;
-
-const ParserError = error{
-    GeneralParserError,
-    UnexpectedTokenError,
-    NoNextNodeError,
-    DuplicateLabelError,
-};
-
-const ParserWarning = error{
-};
-
-pub fn parserPanic(Pae: ParserError, message: []const u8) !void {
+pub fn parserPanic(message: []const u8) !void {
     std.debug.print("Parser Error!: {s}", .{message});
-    return e;
 }
 
 pub const Interactor = struct {
@@ -604,9 +597,8 @@ const NodeLinkingRules = struct {
 };
 
 pub const ParserWarningOrErrorInfo = struct {
-    errorUnion: ParserErrorOrWarning,
-    tokStart: usize,
-    tokEnd: usize, 
+    errorUnion: ParserWarningOrError,
+    tokenWindow: TokenWindow,
     fileName: []const u8,
     lineNumber: usize,
 };
@@ -626,11 +618,33 @@ pub const NodeParser = struct {
     hasLastLabel: bool = false,
     isNewLining: bool = true,
     nodeLinkingRules: ArrayList(NodeLinkingRules),
-    errors: ArrayList(ParserErrorInfo),
-    warnings: ArrayList(ParserWarningInfo),
-    
+    errors: ArrayList(ParserWarningOrErrorInfo),
+    warnings: ArrayList(ParserWarningOrErrorInfo),
+    filename: []const u8 = "__halcyon_no_file",
 
-    fn MakeLinkingRules(self: *Self, node: Node) NodeLinkingRules {
+    pub fn pushError(self: *Self, errorType: ParserWarningOrError, fmt: []const u8, args: anytype) !void {
+        _ = args;
+        _ = fmt;
+        try self.errors.append(.{
+            .errorUnion = errorType,
+            .tokenWindow = self.currentTokenWindow,
+            .fileName = self.filename,
+            .lineNumber = self.lineNumber,
+        });
+    }
+
+    pub fn pushWarning(self: *Self, errorType: ParserWarningOrError, fmt: []const u8, args: anytype) !void {
+        _ = args;
+        _ = fmt;
+        try self.warnings.append(.{
+            .errorUnion = errorType,
+            .tokenWindow = self.currentTokenWindow,
+            .fileName = self.filename,
+            .lineNumber = self.lineNumber,
+        });
+    }
+
+    fn makeLinkingRules(self: *Self, node: Node) NodeLinkingRules {
         _ = self;
         return NodeLinkingRules{
             .node = node,
@@ -641,7 +655,7 @@ pub const NodeParser = struct {
 
     fn addCurrentDialogueChoiceFromUtf8Content(self: *Self, choiceContent: []const u8, alloc: std.mem.Allocator) !void {
         var node = try self.story.newNodeWithContent(choiceContent, alloc);
-        var rules = self.MakeLinkingRules(node);
+        var rules = self.makeLinkingRules(node);
         rules.typeInfo = .{ .choice = .{} };
         try self.finishCreatingNode(node, rules);
         _ = alloc;
@@ -684,6 +698,8 @@ pub const NodeParser = struct {
         // we dont release the storyNodes
         self.tokenStream.deinit();
         self.nodeLinkingRules.deinit();
+        self.errors.deinit();
+        self.warnings.deinit();
     }
 
     pub fn MakeParser(source: []const u8, alloc: std.mem.Allocator) !Self {
@@ -693,9 +709,11 @@ pub const NodeParser = struct {
             .nodeLinkingRules = ArrayList(NodeLinkingRules).init(alloc),
             .lastLabel = "",
             .hasLastLabel = false,
+            .errors = ArrayList(ParserWarningOrErrorInfo).init(alloc),
+            .warnings = ArrayList(ParserWarningOrErrorInfo).init(alloc),
         };
 
-        try rv.nodeLinkingRules.append(rv.MakeLinkingRules(.{}));
+        try rv.nodeLinkingRules.append(rv.makeLinkingRules(.{}));
         return rv;
     }
 
@@ -804,7 +822,7 @@ pub const NodeParser = struct {
                     }
                 } else if ((rule.tabLevel + 1) > scopes.items.len + 1) {
                     // std.debug.print("{d} {d}\n", .{rule.tabLevel, scopes.items.len});
-                    try parserPanic(ParserError.GeneralParserError, "Inconsistent tab level \n");
+                    try parserPanic("Inconsistent tab level \n");
                 } else {
                     switch (rule.typeInfo) {
                         .linear => {
@@ -867,7 +885,7 @@ pub const NodeParser = struct {
                 ParserPrint("{d}: Set var\n", .{nodesCount});
                 const node = try self.story.newDirectiveNodeFromUtf8(dataSlice, alloc);
                 try self.story.setTextContentFromSlice(node, "Set var");
-                try self.finishCreatingNode(node, self.MakeLinkingRules(node));
+                try self.finishCreatingNode(node, self.makeLinkingRules(node));
                 shouldBreak = true;
             }
             if (!shouldBreak and tokMatchGoto(tokenTypeSlice, dataSlice)) {
@@ -876,7 +894,7 @@ pub const NodeParser = struct {
                     if (self.nodeLinkingRules.items[self.lastNode.id].tabLevel > self.tabLevel) {
                         const node = try self.story.newNodeWithContent("Goto Node", alloc);
                         self.story.passThrough.items[node.id] = true;
-                        var linkRules = self.MakeLinkingRules(node);
+                        var linkRules = self.makeLinkingRules(node);
                         linkRules.label = dataSlice[dataSlice.len - 1];
                         try self.finishCreatingNode(node, linkRules);
                     } else {
@@ -896,7 +914,7 @@ pub const NodeParser = struct {
                     if (self.nodeLinkingRules.items[self.lastNode.id].tabLevel > self.tabLevel) {
                         const node = try self.story.newNodeWithContent("Goto Node", alloc);
                         self.story.passThrough.items[node.id] = true;
-                        var linkRules = self.MakeLinkingRules(node);
+                        var linkRules = self.makeLinkingRules(node);
                         linkRules.label = "@__STORY_END__";
                         try self.finishCreatingNode(node, linkRules);
                     } else {
@@ -915,7 +933,7 @@ pub const NodeParser = struct {
                 const node = try self.story.newDirectiveNodeFromUtf8(dataSlice, alloc);
                 try self.story.conditionalBlock.put(node, .{});
                 try self.story.setTextContentFromSlice(node, "If block");
-                try self.finishCreatingNode(node, self.MakeLinkingRules(node));
+                try self.finishCreatingNode(node, self.makeLinkingRules(node));
                 shouldBreak = true;
             }
             if (!shouldBreak and tokMatchElif(tokenTypeSlice, dataSlice)) {
@@ -930,7 +948,7 @@ pub const NodeParser = struct {
                 nodesCount += 1;
                 const node = try self.story.newDirectiveNodeFromUtf8(dataSlice, alloc);
                 try self.story.setTextContentFromSlice(node, "Vars block");
-                try self.finishCreatingNode(node, self.MakeLinkingRules(node));
+                try self.finishCreatingNode(node, self.makeLinkingRules(node));
                 ParserPrint("{d}: Vars block\n", .{nodesCount});
                 shouldBreak = true;
             }
@@ -940,7 +958,7 @@ pub const NodeParser = struct {
                 ParserPrint("{d}: Generic Directive: {s}\n", .{ nodesCount, dataSlice[0..max] });
                 const node = try self.story.newDirectiveNodeFromUtf8(dataSlice, alloc);
                 try self.story.setTextContentFromSlice(node, "Generic Directive");
-                try self.finishCreatingNode(node, self.MakeLinkingRules(node));
+                try self.finishCreatingNode(node, self.makeLinkingRules(node));
                 shouldBreak = true;
             }
             if (!shouldBreak and tokMatchTabSpace(tokenTypeSlice, dataSlice)) {
@@ -966,7 +984,7 @@ pub const NodeParser = struct {
             if (!shouldBreak and tokMatchLabelDeclare(tokenTypeSlice)) {
                 ParserPrint("> Label declare {s}\n", .{dataSlice[1]});
                 if (self.story.tags.contains(dataSlice[1])) {
-                    return ParserError.DuplicateLabelError;
+                    try self.pushWarning(ParserWarning.DuplicateLabelWarning, "duplicate label: {s}", .{dataSlice[1]});
                 }
                 self.hasLastLabel = true;
                 self.lastLabel = dataSlice[1];
@@ -980,7 +998,7 @@ pub const NodeParser = struct {
                     try self.story.addSpeaker(node, try NodeString.fromUtf8(dataSlice[0], alloc));
                 }
 
-                try self.finishCreatingNode(node, self.MakeLinkingRules(node));
+                try self.finishCreatingNode(node, self.makeLinkingRules(node));
                 ParserPrint("{d}: story node {d}\n", .{ nodesCount, self.tabLevel });
                 shouldBreak = true;
             }

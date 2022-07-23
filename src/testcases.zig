@@ -104,16 +104,20 @@ test "simple_1" {
     const alloc = std.testing.allocator;
     var i: usize = 0;
     while (i < simple.set_1.len) : (i += 1) {
+        var hasError: bool = false;
         var story = dut.NodeParser.DoParse(simple.set_1[i], alloc) catch |err| switch (err) {
-            error.DuplicateLabelError => {
-                if (i == 3 or i == 4)
-                    continue
-                else
-                    return error.DuplicateLabelError;
+            error.DuplicateLabelWarning => {
+                if (i == 4) {
+                    hasError = true;
+                    return undefined;
+                } else return error.DuplicateLabelError;
             },
             else => |narrow| return narrow,
         };
-        try explainStory(story);
-        defer story.deinit();
+
+        if (!hasError) {
+            try explainStory(story);
+        }
+        story.deinit();
     }
 }
