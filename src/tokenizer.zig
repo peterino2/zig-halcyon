@@ -239,8 +239,22 @@ pub const TokenStream = struct {
         COMMENT,
     };
 
+    const ParserMode = enum {
+        default, // parses labels and one-offs
+        text,
+        comments,
+    };
+
     tokens: ArrayList([]const u8),
-    token_types: ArrayList(TokenType),
+    token_types: ArrayList(Self.TokenType),
+    isTokenizing: bool = true,
+    finalRun: bool = false,
+    startIndex: usize = 0,
+    length: usize = 1,
+    slice: []const u8 = "",
+    source: []const u8,
+    latestChar: u8 = 0,
+    mode: ParserMode = ParserMode.default,
 
     const Self = @This();
 
@@ -252,110 +266,100 @@ pub const TokenStream = struct {
     pub fn MakeTokens(targetData: []const u8, allocator: std.mem.Allocator) !Self {
         comptime std.debug.assert(@enumToInt(TokenType.ENUM_COUNT) == TokenDefinitions.len);
 
-        const ParserMode = enum {
-            default, // parses labels and one-offs
-            text,
-            comments,
+        var self = Self{
+            .tokens = ArrayList([]const u8).init(allocator),
+            .token_types = ArrayList(TokenType).init(allocator),
+            .source = targetData,
         };
-
-        var isTokenizing = true;
-        var finalRun = false;
-        var startIndex: usize = 0;
-        var length: usize = 1;
-
-        var tokens = ArrayList([]const u8).init(allocator);
-        var token_types = ArrayList(TokenType).init(allocator);
-
-        var mode = ParserMode.default;
 
         var collectingIdentifier = false;
 
-        while (isTokenizing) {
-            const slice: []const u8 = targetData[startIndex .. startIndex + length];
-            const latestChar = slice[slice.len - 1];
+        while (self.isTokenizing) {
+            self.slice = self.source[self.startIndex .. self.startIndex + self.length];
+            self.latestChar = self.slice[self.slice.len - 1];
 
             var shouldBreak = false;
-            switch (mode) {
+            switch (self.mode) {
                 .default => {
                     if (collectingIdentifier) {
-                        if (!(std.ascii.isAlNum(latestChar) or latestChar == '_') or latestChar == '.' or finalRun) {
+                        if (!(std.ascii.isAlNum(self.latestChar) or self.latestChar == '_') or self.latestChar == '.' or self.finalRun) {
                             var finalSlice: []const u8 = undefined;
-                            if (!finalRun) {
-                                finalSlice = slice[0 .. slice.len - 1];
-                            } else if (finalRun) {
-                                finalSlice = targetData[startIndex..];
+                            if (!self.finalRun) {
+                                finalSlice = self.slice[0 .. self.slice.len - 1];
+                            } else if (self.finalRun) {
+                                finalSlice = self.source[self.startIndex..];
                             }
-                            try tokens.append(finalSlice);
-                            try token_types.append(TokenType.LABEL);
-                            startIndex = startIndex + length - 1;
-                            length = 0;
-                            mode = ParserMode.default;
+                            try self.tokens.append(finalSlice);
+                            try self.token_types.append(TokenType.LABEL);
+                            self.startIndex = self.startIndex + self.length - 1;
+                            self.length = 0;
+                            self.mode = ParserMode.default;
                             shouldBreak = true;
                             collectingIdentifier = false;
                         }
                     }
 
-                    if (!shouldBreak and latestChar == '#') {
-                        try tokens.append("#");
-                        try token_types.append(TokenType.HASHTAG);
-                        startIndex = startIndex + length;
-                        length = 0;
-                        mode = ParserMode.comments;
+                    if (!shouldBreak and self.latestChar == '#') {
+                        try self.tokens.append("#");
+                        try self.token_types.append(TokenType.HASHTAG);
+                        self.startIndex = self.startIndex + self.length;
+                        self.length = 0;
+                        self.mode = ParserMode.comments;
                         shouldBreak = true;
                     }
 
-                    if (!shouldBreak and latestChar == ':') {
-                        try tokens.append(":");
-                        try token_types.append(TokenType.COLON);
-                        startIndex = startIndex + length;
-                        length = 0;
-                        mode = ParserMode.text;
+                    if (!shouldBreak and self.latestChar == ':') {
+                        try self.tokens.append(":");
+                        try self.token_types.append(TokenType.COLON);
+                        self.startIndex = self.startIndex + self.length;
+                        self.length = 0;
+                        self.mode = ParserMode.text;
                         shouldBreak = true;
                     }
 
-                    if (!shouldBreak and latestChar == '>') {
-                        try tokens.append(">");
-                        try token_types.append(TokenType.R_ANGLE);
-                        startIndex = startIndex + length;
-                        length = 0;
-                        mode = ParserMode.text;
+                    if (!shouldBreak and self.latestChar == '>') {
+                        try self.tokens.append(">");
+                        try self.token_types.append(TokenType.R_ANGLE);
+                        self.startIndex = self.startIndex + self.length;
+                        self.length = 0;
+                        self.mode = ParserMode.text;
                         shouldBreak = true;
                     }
 
                     inline for (TokenDefinitions) |tok, i| {
-                        if (!shouldBreak and std.mem.eql(u8, slice, tok)) {
-                            try tokens.append(slice);
-                            try token_types.append(@intToEnum(TokenType, i));
-                            startIndex = startIndex + length;
-                            length = 0;
-                            mode = ParserMode.default;
+                        if (!shouldBreak and std.mem.eql(u8, self.slice, tok)) {
+                            try self.tokens.append(self.slice);
+                            try self.token_types.append(@intToEnum(TokenType, i));
+                            self.startIndex = self.startIndex + self.length;
+                            self.length = 0;
+                            self.mode = ParserMode.default;
                             shouldBreak = true;
                         }
                     }
 
                     if (!collectingIdentifier) {
-                        if (std.ascii.isAlNum(latestChar) or latestChar == '_') {
+                        if (std.ascii.isAlNum(self.latestChar) or self.latestChar == '_') {
                             collectingIdentifier = true;
-                            length = 0;
+                            self.length = 0;
                             shouldBreak = true;
                         }
                     }
                     if (!shouldBreak) {
                         if (!collectingIdentifier) {
-                            std.debug.print("\nUnexpected token `{c}`\n>>>>>\n", .{slice});
-                            startIndex += 1;
-                            length = 0;
+                            std.debug.print("\nUnexpected token `{c}`\n>>>>>\n", .{self.slice});
+                            self.startIndex += 1;
+                            self.length = 0;
                         }
                     }
                 },
                 .text => {
                     inline for (LeaveTextModeTokens) |tok| {
-                        if (!shouldBreak and (std.mem.endsWith(u8, slice, tok) or finalRun)) {
+                        if (!shouldBreak and (std.mem.endsWith(u8, self.slice, tok) or self.finalRun)) {
                             var finalSlice: []const u8 = undefined;
-                            if (finalRun) {
-                                finalSlice = targetData[startIndex..];
+                            if (self.finalRun) {
+                                finalSlice = self.source[self.startIndex..];
                             } else {
-                                finalSlice = slice[0 .. slice.len - 1];
+                                finalSlice = self.slice[0 .. self.slice.len - 1];
                             }
 
                             // strip leading and trailing whitespaces.
@@ -369,66 +373,60 @@ pub const TokenStream = struct {
                                 finalSliceEndIndex -= 1;
                             }
 
-                            try tokens.append(finalSlice[finalSliceStartIndex .. finalSliceEndIndex + 1]);
-                            try token_types.append(TokenType.STORY_TEXT);
+                            try self.tokens.append(finalSlice[finalSliceStartIndex .. finalSliceEndIndex + 1]);
+                            try self.token_types.append(TokenType.STORY_TEXT);
 
-                            startIndex = startIndex + length;
-                            length = 0;
-                            mode = ParserMode.default;
+                            self.startIndex = self.startIndex + self.length;
+                            self.length = 0;
+                            self.mode = ParserMode.default;
                             shouldBreak = true;
                         }
                     }
 
                     if (shouldBreak) {
-                        if (std.mem.endsWith(u8, slice, "#")) {
-                            mode = ParserMode.comments;
-                            try tokens.append("#");
-                            try token_types.append(TokenType.HASHTAG);
+                        if (std.mem.endsWith(u8, self.slice, "#")) {
+                            self.mode = ParserMode.comments;
+                            try self.tokens.append("#");
+                            try self.token_types.append(TokenType.HASHTAG);
                         } else {
-                            try tokens.append("\n");
-                            try token_types.append(TokenType.NEWLINE);
+                            try self.tokens.append("\n");
+                            try self.token_types.append(TokenType.NEWLINE);
                         }
-                        if (std.mem.endsWith(u8, slice, "\r")) {
+                        if (std.mem.endsWith(u8, self.slice, "\r")) {
                             // std.debug.assert(false, "File is encoded with carraige return. The standard is linefeed (\n) only as the linebreak");
                         }
                     }
                 },
                 .comments => {
                     inline for (LeaveTextModeTokens) |tok| {
-                        if (!shouldBreak and (std.mem.endsWith(u8, slice, tok) or finalRun)) {
-                            if (finalRun) {
-                                try tokens.append(targetData[startIndex..]);
+                        if (!shouldBreak and (std.mem.endsWith(u8, self.slice, tok) or self.finalRun)) {
+                            if (self.finalRun) {
+                                try self.tokens.append(self.source[self.startIndex..]);
                             } else {
-                                try tokens.append(slice[0 .. slice.len - 1]);
+                                try self.tokens.append(self.slice[0 .. self.slice.len - 1]);
                             }
-                            try token_types.append(TokenType.COMMENT);
-                            startIndex = startIndex + length - 1;
-                            length = 0;
-                            mode = ParserMode.default;
+                            try self.token_types.append(TokenType.COMMENT);
+                            self.startIndex = self.startIndex + self.length - 1;
+                            self.length = 0;
+                            self.mode = ParserMode.default;
                             shouldBreak = true;
                         }
                     }
                 },
             }
 
-            if (finalRun) {
-                isTokenizing = false;
-            } else if (startIndex + length == targetData.len) {
-                finalRun = true;
+            if (self.finalRun) {
+                self.isTokenizing = false;
+            } else if (self.startIndex + self.length == self.source.len) {
+                self.finalRun = true;
                 continue;
             }
-            length += 1;
+            self.length += 1;
         }
 
-        std.debug.assert(tokens.items.len == token_types.items.len);
-        var rv = Self{
-            .tokens = tokens,
-            .token_types = token_types,
-        };
+        std.debug.assert(self.tokens.items.len == self.token_types.items.len);
 
-        // rv.test_display();
-
-        return rv;
+        return self;
     }
 
     pub fn test_display(self: Self) void {
@@ -441,8 +439,8 @@ pub const TokenStream = struct {
 
 test "Tokenizing test" {
     var stream = try TokenStream.MakeTokens(easySampleData, std.testing.allocator);
+    // stream.test_display();
     defer stream.deinit();
 
     // skipping the ast stage will make things easier but could possibly make things more difficult later..
-    // ehh flip it.
 }

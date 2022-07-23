@@ -26,7 +26,7 @@ const TypeRef = utils.TypeRef;
 // - rich name information - done
 //
 // type database operations:
-// - add types
+// - add types - done
 // - add customTypes
 // - create value of type
 // - create a reference to type
@@ -60,9 +60,9 @@ pub fn init(alloc: std.mem.Allocator) !Self {
             @intToEnum(BuiltinFactTypes, field.value),
             std.testing.allocator,
         );
-        typeInfo.prettyPrint(0);
+        // typeInfo.prettyPrint(0);
         try rv.addType(typeInfo);
-        std.debug.print("\n", .{});
+        // std.debug.print("\n", .{});
     }
 
     return rv;

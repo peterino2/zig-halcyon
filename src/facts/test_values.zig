@@ -169,11 +169,6 @@ test "012-conversions-boolean" {
     var testString2 = FactValue{ .string = .{ .value = bool2.asString(std.testing.allocator) } };
     defer testString2.deinit();
     try std.testing.expect(falseString.compareEq(testString2, std.testing.allocator));
-
-    // boolean to typeInfo
-    // float to typeInfo
-    // int to typeInfo
-    // enum to typeInfo
 }
 
 test "011-validate-all-interfaces" {

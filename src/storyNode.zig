@@ -86,47 +86,6 @@ pub const NodeType = enum(u8) {
 
 pub const StoryNodesError = error{ InstancesNotExistError, GeneralError };
 
-const FactVarTypes = enum {
-    BoolType,
-    IntType,
-    BigIntType,
-    StringType,
-    GenericType,
-    //RefType, todo
-    MaxTypesCount,
-};
-// used to key into the factsDB
-const FactVarHandle = struct {
-    key: u32,
-    // ... todo fill this guy out later theres a lot to do here.
-};
-
-const FactVar = union(enum) {
-    boolType: bool,
-    intType: u32,
-    bigIntType: u64,
-    stringType: NodeString,
-    genericType: struct {
-        // todo
-    },
-};
-
-pub const NodeDirective = union(enum) {
-    const Self = @This();
-    set: struct {
-        varToSet: FactVarHandle,
-        newValue: FactVar,
-    },
-    generic: struct {},
-
-    pub fn fromUtf8Tokens(source: []const []const u8, alloc: std.mem.Allocator) Self {
-        // todo actually parse these nodes into directives
-        _ = source;
-        _ = alloc;
-        return Self{ .generic = .{} };
-    }
-};
-
 const BranchNode = struct {
     // todo
 };
@@ -136,13 +95,12 @@ pub const StoryNodes = struct {
     textContent: ArrayList(NodeString),
     passThrough: ArrayList(bool),
 
-    directives: AutoHashMap(Node, NodeDirective),
     speakerName: AutoHashMap(Node, NodeString),
     conditionalBlock: AutoHashMap(Node, BranchNode),
     choices: AutoHashMap(Node, ArrayList(Node)),
     nextNode: AutoHashMap(Node, Node),
     explicitLink: AutoHashMap(Node, void),
-    labels: std.StringHashMap(Node),
+    tags: std.StringHashMap(Node),
 
     const Self = @This();
 
@@ -160,8 +118,7 @@ pub const StoryNodes = struct {
             .speakerName = AutoHashMap(Node, NodeString).init(allocator),
             .choices = AutoHashMap(Node, ArrayList(Node)).init(allocator),
             .nextNode = AutoHashMap(Node, Node).init(allocator),
-            .labels = std.StringHashMap(Node).init(allocator),
-            .directives = AutoHashMap(Node, NodeDirective).init(allocator),
+            .tags = std.StringHashMap(Node).init(allocator),
             .conditionalBlock = AutoHashMap(Node, BranchNode).init(allocator),
             .explicitLink = std.AutoHashMap(Node, void).init(allocator),
         };
@@ -204,7 +161,7 @@ pub const StoryNodes = struct {
         }
 
         self.nextNode.deinit();
-        self.labels.deinit();
+        self.tags.deinit();
     }
 
     pub fn newNodeWithContent(self: *Self, content: []const u8, alloc: std.mem.Allocator) !Node {
@@ -225,11 +182,13 @@ pub const StoryNodes = struct {
 
     fn newDirectiveNodeFromUtf8(self: *Self, source: []const []const u8, alloc: std.mem.Allocator) !Node {
         // you have access to start and end window here.
-        var node = try self.newNodeWithContent("UNKNOWN DIRECTIVE", alloc);
-        var directive = NodeDirective.fromUtf8Tokens(source, alloc);
-        try self.directives.put(node, directive);
+        _ = self;
+        _ = source;
+        _ = alloc;
+        // var node = try self.newNodeWithContent("UNKNOWN DIRECTIVE", alloc);
+        // try self.directives.put(node, directive);
 
-        return node;
+        return Node{};
     }
 
     pub fn setTextContentFromSlice(self: *Self, node: Node, newContent: []const u8) !void {
@@ -239,16 +198,16 @@ pub const StoryNodes = struct {
     }
 
     pub fn setLabel(self: *Self, id: Node, label: []const u8) !void {
-        ParserPrint("SettingLabel  {s}!!\n\n", .{label});
-        if (self.labels.contains(label)) {
+        ParserPrint("SettingLabel  {s}!!\n\n", .{tags});
+        if (self.tags.contains(label)) {
             return ParserError.DuplicateLabelError;
         }
-        try self.labels.put(label, id);
+        try self.tags.put(label, id);
     }
 
     pub fn findNodeByLabel(self: Self, label: []const u8) ?Node {
-        if (self.labels.contains(label)) {
-            return self.labels.getEntry(label).?.value_ptr.*;
+        if (self.tags.contains(label)) {
+            return self.tags.getEntry(label).?.value_ptr.*;
         } else {
             std.debug.print("!! unable to find label {s}", .{label});
             return null;
@@ -319,18 +278,6 @@ pub fn parserPanic(e: ParserError, message: []const u8) !void {
     std.debug.print("Parser Error!: {s}", .{message});
     return e;
 }
-
-// 0xee0201
-//     0x03
-// add 2 1
-// 0xee0201
-//
-// int main() {
-//  printf("hello world");
-// }
-//
-//
-//
 
 pub const Interactor = struct {
     story: *const StoryNodes,
@@ -1139,7 +1086,7 @@ test "parse simplest with no-conditionals" {
         if (i == 0) continue;
         const node = story.instances.items[i];
         std.debug.assert(node.id == i);
-        if (story.directives.contains(node) or story.conditionalBlock.contains(node)) {
+        if (story.conditionalBlock.contains(node)) {
             std.debug.print("{d}> {s}\n", .{ i, content.asUtf8Native() });
         } else {
             if (story.speakerName.get(node)) |speaker| {
@@ -1166,7 +1113,7 @@ test "parse simplest with no-conditionals" {
         std.debug.print("\n", .{});
     }
 
-    var iter = story.labels.iterator();
+    var iter = story.tags.iterator();
 
     std.debug.print("\nLabels\n", .{});
     while (iter.next()) |instance| {

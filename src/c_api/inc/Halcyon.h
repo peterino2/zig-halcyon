@@ -66,7 +66,7 @@ EXPORT_API void HalcInteractor_GetSpeaker(
 EXPORT_API void HalcInteractor_Destroy(
     const HalcInteractor* interactor);  
 
-// returns the ID of the next node we traveled to. returns -1 if we reached the end of the story.
+// returns the ID of the next node we traveled to. returns -1 if we got an error, and 0 if we reached the end of the story
 EXPORT_API int HalcInteractor_Next(
     HalcInteractor* interactor);
     
