@@ -129,7 +129,6 @@ pub const StoryNodes = struct {
 
     pub fn deinit(self: *Self) void {
         self.instances.deinit();
-        self.directives.deinit();
         self.passThrough.deinit();
         self.explicitLink.deinit();
         self.conditionalBlock.deinit();
@@ -198,7 +197,7 @@ pub const StoryNodes = struct {
     }
 
     pub fn setLabel(self: *Self, id: Node, label: []const u8) !void {
-        ParserPrint("SettingLabel  {s}!!\n\n", .{tags});
+        ParserPrint("SettingLabel  {s}!!\n\n", .{label});
         if (self.tags.contains(label)) {
             return ParserError.DuplicateLabelError;
         }
@@ -943,7 +942,7 @@ pub const NodeParser = struct {
             }
             if (!shouldBreak and tokMatchLabelDeclare(tokenTypeSlice)) {
                 ParserPrint("Label declare {s}\n", .{dataSlice[1]});
-                if (self.story.labels.contains(dataSlice[1])) {
+                if (self.story.tags.contains(dataSlice[1])) {
                     return ParserError.DuplicateLabelError;
                 }
                 self.hasLastLabel = true;
