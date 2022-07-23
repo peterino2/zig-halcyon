@@ -121,7 +121,7 @@ pub const easySampleData =
     \\        > I hate you
     \\            @set(PersonA.isPissedOff = true)
     \\            PersonA: Well flip you bud.
-    \\        > Hello
+    \\        > s
     \\            @debugPrint("Hello world!") # this is an execution
     \\            @goto hello
     \\        > Have some gold
