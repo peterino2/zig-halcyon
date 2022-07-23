@@ -547,59 +547,51 @@ pub const DelcarativeParser = struct {
     }
 };
 
+const TokenWindow = struct {
+    startIndex: usize = 0,
+    endIndex: usize = 1,
+};
+
+const NodeLinkingRules = struct {
+    node: Node,
+    tabLevel: usize,
+    label: ?[]const u8 = null,
+    explicit_goto: ?Node = null,
+    typeInfo: union(enum) { linear: struct {
+        shouldLinkToLast: bool = true,
+        lastNode: Node,
+    }, choice: struct {} },
+
+    pub fn displayPretty(self: NodeLinkingRules) void {
+        if (self.node.id == 0) {
+            std.debug.print("node: NULL NODE \n", .{});
+            return;
+        }
+        std.debug.print("node: {d} t={d} ", .{ self.node.id, self.tabLevel });
+        if (self.label) |label| {
+            std.debug.print("->[{s}]", .{label});
+        }
+        if (self.explicit_goto) |goto| {
+            std.debug.print("->[ID: {d}]", .{goto});
+        }
+
+        switch (self.typeInfo) {
+            .linear => |info| {
+                if (info.shouldLinkToLast) {
+                    std.debug.print(" comes from : {d}", .{info.lastNode.id});
+                }
+            },
+            .choice => |info| {
+                std.debug.print(" choice node", .{});
+                _ = info;
+            },
+        }
+        std.debug.print("\n", .{});
+    }
+};
+
 pub const NodeParser = struct {
     const Self = @This();
-    const TokenWindow = struct {
-        startIndex: usize = 0,
-        endIndex: usize = 1,
-    };
-
-    const NodeLinkingRules = struct {
-        node: Node,
-        tabLevel: usize,
-        label: ?[]const u8 = null,
-        explicit_goto: ?Node = null,
-        typeInfo: union(enum) { linear: struct {
-            shouldLinkToLast: bool = true,
-            lastNode: Node,
-        }, choice: struct {} },
-
-        pub fn displayPretty(self: NodeLinkingRules) void {
-            if (self.node.id == 0) {
-                std.debug.print("node: NULL NODE \n", .{});
-                return;
-            }
-            std.debug.print("node: {d} t={d} ", .{ self.node.id, self.tabLevel });
-            if (self.label) |label| {
-                std.debug.print("->[{s}]", .{label});
-            }
-            if (self.explicit_goto) |goto| {
-                std.debug.print("->[ID: {d}]", .{goto});
-            }
-
-            switch (self.typeInfo) {
-                .linear => |info| {
-                    if (info.shouldLinkToLast) {
-                        std.debug.print(" comes from : {d}", .{info.lastNode.id});
-                    }
-                },
-                .choice => |info| {
-                    std.debug.print(" choice node", .{});
-                    _ = info;
-                },
-            }
-            std.debug.print("\n", .{});
-        }
-    };
-
-    fn MakeLinkingRules(self: *Self, node: Node) NodeLinkingRules {
-        _ = self;
-        return NodeLinkingRules{
-            .node = node,
-            .tabLevel = self.tabLevel,
-            .typeInfo = .{ .linear = .{ .lastNode = self.lastNode } },
-        };
-    }
 
     tokenStream: TokenStream,
     isParsing: bool = true,
@@ -613,6 +605,15 @@ pub const NodeParser = struct {
     hasLastLabel: bool = false,
     isNewLining: bool = true,
     nodeLinkingRules: ArrayList(NodeLinkingRules),
+
+    fn MakeLinkingRules(self: *Self, node: Node) NodeLinkingRules {
+        _ = self;
+        return NodeLinkingRules{
+            .node = node,
+            .tabLevel = self.tabLevel,
+            .typeInfo = .{ .linear = .{ .lastNode = self.lastNode } },
+        };
+    }
 
     fn addCurrentDialogueChoiceFromUtf8Content(self: *Self, choiceContent: []const u8, alloc: std.mem.Allocator) !void {
         var node = try self.story.newNodeWithContent(choiceContent, alloc);
@@ -833,7 +834,7 @@ pub const NodeParser = struct {
             _ = tokenType;
             const tokenTypeSlice = tokenTypes.items[self.currentTokenWindow.startIndex..self.currentTokenWindow.endIndex];
             const dataSlice = tokenData.items[self.currentTokenWindow.startIndex..self.currentTokenWindow.endIndex];
-            ParserPrint("current window: {s} `{s}`\n", .{ self.currentTokenWindow, dataSlice });
+            //ParserPrint("current window: {s} `{s}`\n", .{ self.currentTokenWindow, dataSlice });
 
             var shouldBreak = false;
             if (!shouldBreak and tokMatchComment(tokenTypeSlice)) {

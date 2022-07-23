@@ -48,7 +48,13 @@ pub const simple = struct {
         \\@end
     ;
 
-    pub const set_1: []const []const u8 = &.{ simple_1, simple_2, multiLabel, duplicateLabel, duplicateLabel_differentPlace };
+    pub const set_1: []const []const u8 = &.{
+        simple_1,
+        simple_2,
+        multiLabel,
+        duplicateLabel,
+        duplicateLabel_differentPlace,
+    };
 };
 
 pub fn explainStory(story: dut.StoryNodes) !void {
@@ -57,7 +63,7 @@ pub fn explainStory(story: dut.StoryNodes) !void {
         if (i == 0) continue;
         const node = story.instances.items[i];
         std.debug.assert(node.id == i);
-        if (story.directives.contains(node) or story.conditionalBlock.contains(node)) {
+        if (story.conditionalBlock.contains(node)) {
             std.debug.print("{d}> {s}\n", .{ i, content.asUtf8Native() });
         } else {
             if (story.speakerName.get(node)) |speaker| {
@@ -84,7 +90,7 @@ pub fn explainStory(story: dut.StoryNodes) !void {
         std.debug.print("\n", .{});
     }
 
-    var iter = story.labels.iterator();
+    var iter = story.tags.iterator();
 
     std.debug.print("\nLabels\n", .{});
     while (iter.next()) |instance| {
@@ -98,7 +104,15 @@ test "simple_1" {
     const alloc = std.testing.allocator;
     var i: usize = 0;
     while (i < simple.set_1.len) : (i += 1) {
-        var story = try dut.NodeParser.DoParse(simple.set_1[i], alloc);
+        var story = dut.NodeParser.DoParse(simple.set_1[i], alloc) catch |err| switch (err) {
+            error.DuplicateLabelError => {
+                if (i == 3 or i == 4)
+                    continue
+                else
+                    return error.DuplicateLabelError;
+            },
+            else => |narrow| return narrow,
+        };
         try explainStory(story);
         defer story.deinit();
     }
