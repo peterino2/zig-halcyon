@@ -1,4 +1,4 @@
-// Fill out your copyright notice in the Description page of Project Settings.
+// Unreal engine integration file.
 
 using System.IO;
 using UnrealBuildTool;

@@ -28,11 +28,6 @@ pub fn build(b: *std.build.Builder) void {
         halcShared.setBuildMode(mode);
         halcShared.addIncludeDir("src/c_api/inc");
         halcShared.setLibCFile(std.build.FileSource{ .path = "libc.txt" });
-        // halcShared.linkLibCpp();
-        // halcShared.linkLibC();
-        // halcShared.linkSystemLibraryName("vcruntime");
-        // halcShared.linkSystemLibraryName("ucrt");
-        // halcShared.linkSystemLibraryName("msvcrt");
         halcShared.bundle_compiler_rt = true;
         halcShared.install();
 

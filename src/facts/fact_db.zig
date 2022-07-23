@@ -1,0 +1,169 @@
+const std = @import("std");
+const values = @import("values.zig");
+const utils = @import("factUtils.zig");
+
+const ArrayList = std.ArrayList;
+const AutoHashMap = std.AutoHashMap;
+const StringHashMap = std.StringHashMap;
+
+const Initializer = values.Initializer;
+const FactValue = values.FactValue;
+const FactTypeInfo = values.FactTypeInfo;
+
+const BuiltinFactTypes = utils.BuiltinFactTypes;
+const MakeLabel = utils.MakeLabel;
+const Label = utils.Label;
+const TypeRef = utils.TypeRef;
+
+pub const FactDatabase = struct {
+    types: TypeDatabase,
+    data: ArrayList(FactValue), // we will typically only ever access these guys through pointers
+    factsByLabel: AutoHashMap(u32, usize),
+    allocator: std.mem.Allocator,
+
+    const Self = @This();
+
+    pub fn init(allocator: std.mem.Allocator) !Self {
+        var self: Self = .{
+            .types = try TypeDatabase.init(allocator),
+            .data = ArrayList(FactValue).init(allocator),
+            .factsByLabel = AutoHashMap(u32, usize).init(allocator),
+            .allocator = allocator,
+        };
+
+        return self;
+    }
+
+    pub fn executeInstructions(self: *Self, code: FactsInstruction) !void {
+        _ = self;
+        _ = code;
+    }
+
+    pub fn getOrAddFactInner(self: *Self, label: Label) !*FactValue {
+        if (self.factsByLabel.contains(label.hash)) {
+            var index = self.factsByLabel.getEntry(label.hash).?.value_ptr.*;
+            return &self.data.items[index];
+        }
+
+        var index = self.data.items.len;
+        try self.factsByLabel.put(label.hash, index);
+        return try self.data.addOne();
+    }
+
+    pub fn newFact(self: *Self, label: Label, typeTag: BuiltinFactTypes) !*FactValue {
+        var x = try self.getOrAddFactInner(label);
+        x.* = FactValue.makeDefault(typeTag, self.allocator);
+        return x;
+    }
+
+    pub fn getFactByLabel(self: Self, label: Label) ?*FactValue {
+        if (!self.factsByLabel.contains(label.hash)) {
+            return null;
+        }
+        return &self.data.items[(self.factsByLabel.getPtr(label.hash)).?.*];
+    }
+
+    pub fn compare(self: Self, comptime innerFuncName: []const u8, left: Label, right: Label) !bool {
+        const BadVal = FactValue.makeDefault(BuiltinFactTypes._BADTYPE, self.allocator);
+
+        var l: *const FactValue = &BadVal;
+        var r: *const FactValue = &BadVal;
+
+        if (self.factsByLabel.contains(left.hash)) {
+            l = self.getFactByLabel(left).?;
+        }
+        if (self.factsByLabel.contains(right.hash)) {
+            r = self.getFactByLabel(right).?;
+        }
+
+        //return l.compareEq(r.*, self.allocator);
+
+        return @field(l.*, innerFuncName)(r.*, self.allocator);
+    }
+
+    pub fn compareEq(self: Self, left: Label, right: Label) !bool {
+        return try self.compare("compareEq", left, right);
+    }
+
+    pub fn compareNe(self: Self, left: Label, right: Label) !bool {
+        return try self.compare("compareNe", left, right);
+    }
+
+    pub fn compareGe(self: Self, left: Label, right: Label) !bool {
+        return try self.compare("compareGe", left, right);
+    }
+
+    pub fn compareGt(self: Self, left: Label, right: Label) !bool {
+        return try self.compare("compareGt", left, right);
+    }
+
+    pub fn compareLt(self: Self, left: Label, right: Label) !bool {
+        return try self.compare("compareLt", left, right);
+    }
+
+    pub fn compareLe(self: Self, left: Label, right: Label) !bool {
+        return try self.compare("compareLe", left, right);
+    }
+
+    pub fn deinit(self: *Self) void {
+        self.factsByLabel.deinit();
+
+        var i: usize = 0;
+        while (i < self.data.items.len) : (i += 1) {
+            self.data.items[i].deinit();
+        }
+
+        self.data.deinit();
+        self.types.deinit();
+    }
+
+    pub fn parse(self: *Self, tokens: []const []const u8) !void {
+        _ = self;
+        _ = tokens;
+    }
+};
+
+test "FactsDatabase" {
+    const expect = std.testing.expect;
+    var factDb = try FactDatabase.init(std.testing.allocator);
+    defer factDb.deinit();
+
+    var variable = try factDb.getOrAddFactInner(MakeLabel("variable"));
+    variable.* = FactValue.makeDefault(BuiltinFactTypes.boolean, factDb.allocator);
+    variable.*.boolean.value = true;
+
+    var variable2 = try factDb.newFact(MakeLabel("variable2"), BuiltinFactTypes.boolean);
+    variable2.*.boolean.value = true;
+
+    var variable3 = try factDb.newFact(MakeLabel("variable3"), BuiltinFactTypes.boolean);
+    variable3.*.boolean.value = false;
+
+    try expect(factDb.data.items.len == 3);
+    // try std.testing.expect(factDb.data.items[0].compareEq(factDb.data.items[1], factDb.allocator));
+    try expect(variable.compareEq(variable2.*, factDb.allocator));
+    try expect(try factDb.compareEq(MakeLabel("variable"), MakeLabel("variable2")));
+    try expect(try factDb.compareNe(MakeLabel("variable3"), MakeLabel("variable2")));
+    try expect(try factDb.compareLe(MakeLabel("variable3"), MakeLabel("variable2")));
+    try expect(try factDb.compareLt(MakeLabel("variable3"), MakeLabel("variable2")));
+    try expect(try factDb.compareGt(MakeLabel("variable2"), MakeLabel("variable3")));
+    try expect(try factDb.compareGe(MakeLabel("variable2"), MakeLabel("variable3")));
+    try expect(try factDb.compareGe(MakeLabel("variable2"), MakeLabel("variable2")));
+
+    // try this with integers?
+
+    var integer0 = try factDb.newFact(MakeLabel("variable3"), BuiltinFactTypes.integer);
+    integer0.*.integer.value = 420;
+
+    var integer1 = try factDb.newFact(MakeLabel("variable2"), BuiltinFactTypes.integer);
+    integer1.*.integer.value = 421;
+
+    var string0 = try factDb.newFact(MakeLabel("variable4"), BuiltinFactTypes.string);
+    string0.* = try FactValue.fromUtf8("420", factDb.allocator);
+
+    try expect(factDb.data.items.len == 4);
+
+    try expect(try factDb.compareGe(MakeLabel("variable2"), MakeLabel("variable3")));
+    try expect(try factDb.compareEq(MakeLabel("variable4"), MakeLabel("variable3")));
+
+    try expect(try factDb.compareNe(MakeLabel("badRef"), MakeLabel("variable2")));
+}

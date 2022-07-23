@@ -1,6 +1,7 @@
 const std = @import("std");
 const values = @import("values.zig");
 const utils = @import("factUtils.zig");
+const fact_db = @import("fact_db.zig");
 
 const ArrayList = std.ArrayList;
 const AutoHashMap = std.AutoHashMap;

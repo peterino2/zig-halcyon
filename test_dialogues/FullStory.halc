@@ -6,7 +6,7 @@
 
 `quests {
 
-    // prototyping the data layout in JSON
+    // prototyping the data layout in something json-like
     questId: "q1" // this automatically creates the q1 namespace for all facts
     // facts are hierarchical maps of tags to values
     // eg. q1.knowledge.bed.wasnt_used = true; will lazily set this fact to true within the facts database.
@@ -79,7 +79,8 @@
 
 [hello]
 @if(PersonA.isPissedOff)
-PersonA: Can you flip off?
+#this is a production tag
+#abcdef# PersonA: Can you flip off?
 @else
 PersonA: Hello!
     > I hate you:
@@ -136,7 +137,7 @@ PersonA: Hello!
     Grace: It all started a few days ago. The nobleman came to town and checked in at this inn. He arrived in a
     the middle of a storm and was desperate for a place to stay.
 
-    @sendEven(start cutscene stormy night arrival)
+    @sendEvent(start cutscene stormy night arrival)
 
     @waitForEvent(end cutscene stormy night arrival)
 

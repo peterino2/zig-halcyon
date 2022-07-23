@@ -86,8 +86,15 @@ pub const NodeType = enum(u8) {
 
 pub const StoryNodesError = error{ InstancesNotExistError, GeneralError };
 
-const BranchNode = struct {
-    // todo
+
+pub const BranchNode = struct {};
+
+pub const NodeData = struct {
+    node: Node,
+    content: union {
+        textContent: NodeString,
+    },
+    passThrough: bool,
 };
 
 pub const StoryNodes = struct {
@@ -95,6 +102,7 @@ pub const StoryNodes = struct {
     textContent: ArrayList(NodeString),
     passThrough: ArrayList(bool),
 
+    nodes: ArrayList(NodeData),
     speakerName: AutoHashMap(Node, NodeString),
     conditionalBlock: AutoHashMap(Node, BranchNode),
     choices: AutoHashMap(Node, ArrayList(Node)),
@@ -181,13 +189,13 @@ pub const StoryNodes = struct {
 
     fn newDirectiveNodeFromUtf8(self: *Self, source: []const []const u8, alloc: std.mem.Allocator) !Node {
         // you have access to start and end window here.
-        _ = self;
-        _ = source;
-        _ = alloc;
-        // var node = try self.newNodeWithContent("UNKNOWN DIRECTIVE", alloc);
-        // try self.directives.put(node, directive);
+        var newString = try NodeString.fromUtf8(source[0], alloc);
+        var node = Node{ .id = self.instances.items.len, .generation = 0 };
+        try self.textContent.append(newString);
+        try self.instances.append(node);
+        try self.passThrough.append(false);
 
-        return Node{};
+        return node;
     }
 
     pub fn setTextContentFromSlice(self: *Self, node: Node, newContent: []const u8) !void {
@@ -197,7 +205,7 @@ pub const StoryNodes = struct {
     }
 
     pub fn setLabel(self: *Self, id: Node, label: []const u8) !void {
-        ParserPrint("SettingLabel  {s}!!\n\n", .{label});
+        //ParserPrint("SettingLabel  {s}!!\n\n", .{label});
         if (self.tags.contains(label)) {
             return ParserError.DuplicateLabelError;
         }
@@ -266,6 +274,8 @@ pub const StoryNodes = struct {
     }
 };
 
+pub const ParserWarningOrError = ParserError | ParserWarning;
+
 const ParserError = error{
     GeneralParserError,
     UnexpectedTokenError,
@@ -273,7 +283,10 @@ const ParserError = error{
     DuplicateLabelError,
 };
 
-pub fn parserPanic(e: ParserError, message: []const u8) !void {
+const ParserWarning = error{
+};
+
+pub fn parserPanic(Pae: ParserError, message: []const u8) !void {
     std.debug.print("Parser Error!: {s}", .{message});
     return e;
 }
@@ -590,6 +603,14 @@ const NodeLinkingRules = struct {
     }
 };
 
+pub const ParserWarningOrErrorInfo = struct {
+    errorUnion: ParserErrorOrWarning,
+    tokStart: usize,
+    tokEnd: usize, 
+    fileName: []const u8,
+    lineNumber: usize,
+};
+
 pub const NodeParser = struct {
     const Self = @This();
 
@@ -605,6 +626,9 @@ pub const NodeParser = struct {
     hasLastLabel: bool = false,
     isNewLining: bool = true,
     nodeLinkingRules: ArrayList(NodeLinkingRules),
+    errors: ArrayList(ParserErrorInfo),
+    warnings: ArrayList(ParserWarningInfo),
+    
 
     fn MakeLinkingRules(self: *Self, node: Node) NodeLinkingRules {
         _ = self;
@@ -646,7 +670,7 @@ pub const NodeParser = struct {
 
     fn finishCreatingNode(self: *Self, node: Node, params: NodeLinkingRules) !void {
         self.lastNode = node;
-        _ = params;
+
         try self.nodeLinkingRules.append(params);
 
         // handle linking
@@ -725,8 +749,6 @@ pub const NodeParser = struct {
                 } else if (rule.explicit_goto) |goto| {
                     _ = try self.story.setLink(rule.node, goto);
                 }
-
-                // std.debug.print("{s} -> {s}\n", .{rule.node, self.story.nextNode.get(rule.node)});
                 i += 1;
             }
         }
@@ -736,7 +758,6 @@ pub const NodeParser = struct {
         try scopes.append(TabScope.init(.{}, alloc));
         defer TabScope.deinitAllScopes(&scopes);
 
-        std.debug.print("\n\n", .{});
         {
             var i: usize = 0;
             while (i < self.nodeLinkingRules.items.len) {
@@ -802,7 +823,7 @@ pub const NodeParser = struct {
             }
         }
 
-        // Bad optimization pass bow away nodes marked with passThrough
+        // Bad optimization pass blow away nodes marked with passThrough
         {
             var i: usize = 0;
             while (i < self.story.instances.items.len) : (i += 1) {
@@ -838,7 +859,7 @@ pub const NodeParser = struct {
 
             var shouldBreak = false;
             if (!shouldBreak and tokMatchComment(tokenTypeSlice)) {
-                ParserPrint(" comment (not a real node)\n", .{});
+                ParserPrint(" comment (not a real node) latsNode = {d}\n", .{self.lastNode.id});
                 shouldBreak = true;
             }
             if (!shouldBreak and tokMatchSet(tokenTypeSlice, dataSlice)) {
@@ -915,7 +936,8 @@ pub const NodeParser = struct {
             }
             if (!shouldBreak and tokMatchGenericDirective(tokenTypeSlice)) {
                 nodesCount += 1;
-                ParserPrint("{d}: Generic Directive\n", .{nodesCount});
+                const max = std.math.min(10, dataSlice.len);
+                ParserPrint("{d}: Generic Directive: {s}\n", .{ nodesCount, dataSlice[0..max] });
                 const node = try self.story.newDirectiveNodeFromUtf8(dataSlice, alloc);
                 try self.story.setTextContentFromSlice(node, "Generic Directive");
                 try self.finishCreatingNode(node, self.MakeLinkingRules(node));
@@ -942,7 +964,7 @@ pub const NodeParser = struct {
                 }
             }
             if (!shouldBreak and tokMatchLabelDeclare(tokenTypeSlice)) {
-                ParserPrint("Label declare {s}\n", .{dataSlice[1]});
+                ParserPrint("> Label declare {s}\n", .{dataSlice[1]});
                 if (self.story.tags.contains(dataSlice[1])) {
                     return ParserError.DuplicateLabelError;
                 }

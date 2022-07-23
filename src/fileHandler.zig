@@ -3,6 +3,8 @@ const std = @import("std");
 const ArrayList = std.ArrayList;
 const AutoHashMap = std.AutoHashMap;
 
+// just some sample code for
+
 test "Open file" {
     const file = try std.fs.cwd().createFile(
         "junk_file.txt",
