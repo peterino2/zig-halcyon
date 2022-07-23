@@ -1,4 +1,5 @@
 #include "Halcyon.h"
+#include <stdio.h>
 #include <iostream>
 #include <wInDOWs.h>
 
@@ -11,18 +12,18 @@ int main(int argc, char** argv)
     std::cout << "hello world" << std::endl;
 
     HalcStory story;
-    const char str[] = 
-        "[hello]\n"
-        "wanker: flip you\n"
-        "personA: flip you too\n"
-        "    > I hate you: \n"
-        "        wanker: flip you mate\n"
-        "    > I hate your dog: \n"
-        "        wanker: I like your cat\n"
-        "    > blow me: \n"
-        "        wanker: alright lets do this\n"
-        "        @goto hello\n"
-        "wanker: flip you";
+ 		const char str[] = 
+			 "[hello]\n"
+			 "Dude: Hey man how's it going?\n"
+			 "$: You notice that the nice man is talking to you\n"
+			 "    > Praise him: \n"
+			 "        Dude: Damn dude thanks so much for your compliment :D\n"
+			 "    > Call him something bad: \n"
+			 "        Dude: Wow you really hurt my feelings\n"
+			 "    > Can we start over?: \n"
+			 "        Dude: Of course! I'll take this convo back to the start\n"
+			 "        @goto hello\n"
+			 "$: End of the story";
 
     HalcStory_Parse(
             HalcString{
@@ -56,8 +57,10 @@ int main(int argc, char** argv)
     {
         HalcChoicesList choicesList;
 
-        HalcInteractor_GetChoices(&i, &choicesList);
-        
+        int result = HalcInteractor_GetChoices(&i, &choicesList);
+
+        printf("addr of choicesList: 0x%x\n", choicesList.handle);
+
         std::cout << "got choices (count = " << choicesList.len << ")" << std::endl;
 
         for(int i = 0; i < choicesList.len; i++)
@@ -65,8 +68,10 @@ int main(int argc, char** argv)
             auto str = choicesList.strings[i];
             std::cout << "  - " << str.utf8 << " (len = " << str.len << ")" << std::endl;
         }
-
-        HalcChoicesList_Destroy(&choicesList);
+        if(result != -1)
+        {
+            HalcChoicesList_Destroy(&choicesList);
+        }
     }
 
     HalcInteractor_SelectChoice(&i, 2);

@@ -1,12 +1,12 @@
 #pragma once
 
-// typedef unsigned long long size_t;
-#include <stdint.h>
+typedef unsigned long long size_t;
 
 #ifdef __cplusplus
 extern "C" {
 #endif
 
+#define HALCYON_RESULT_ERROR -1
 
 #ifdef WIN32
 
@@ -37,6 +37,7 @@ typedef struct HalcStory {
     halc_nodes_t* nodes;
 }HalcStory;
 
+
 // returns 0 on success
 EXPORT_API int HalcStory_Parse(HalcString str, struct HalcStory* story);
 
@@ -60,7 +61,10 @@ EXPORT_API int HalcInteractor_GetStoryText(
     
 EXPORT_API void HalcInteractor_GetSpeaker(
     const HalcInteractor* interactor,
-    HalcString* ostr);  
+    HalcString* ostr);
+    
+EXPORT_API void HalcInteractor_Destroy(
+    const HalcInteractor* interactor);  
 
 // returns the ID of the next node we traveled to. returns -1 if we got an error, and 0 if we reached the end of the story
 EXPORT_API int HalcInteractor_Next(

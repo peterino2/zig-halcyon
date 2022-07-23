@@ -16,7 +16,6 @@ pub const simplest_v1 =
     \\    > (Chun-Li) Both:
     \\        $: Don't be stupid you have to pick one.
     \\        @goto question
-    \\$: you walk away in disgust
     \\@end
 ;
 

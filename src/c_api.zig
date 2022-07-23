@@ -23,6 +23,13 @@ const allocator = allocStruct.allocator();
 const Cstr = ?[*:0]const u8;
 const Cstr_checked = [*:0]const u8;
 
+export fn HalcInteractor_Destroy(handle: ?*HalcInteractor) void {
+    var interactor = GetInteractorFromHandle(handle);
+    interactor.?.*.deinit();
+
+    allocator.destroy(interactor.?);
+}
+
 export fn HalcStory_Parse(str: HalcString, ret: ?*c.HalcStory) c_int {
     if (ret == null) return -1;
 
@@ -116,15 +123,25 @@ export fn HalcInteractor_GetSpeaker(
 export fn HalcInteractor_Next(
     interactor: ?*HalcInteractor,
 ) c_int {
-    if (interactor == null) return -1;
+    if (interactor == null) {
+        std.debug.print("Invalid Interactor passed in \n", .{});
+        return -1;
+    }
     var i = GetInteractorFromHandle(interactor);
-    if (i == null) return -1;
-    i.?.*.next() catch return -1;
+    if (i == null) {
+        std.debug.print("Unable to get valid interactor from handle \n", .{});
+        return -1;
+    }
+    i.?.*.next() catch {
+        std.debug.print("Unable to go next for some reason...\n", .{});
+        return -1;
+    };
     interactor.?.*.id = i.?.node.id;
     return @intCast(c_int, i.?.node.id);
 }
 
 fn GetArrayListFromChoices(array: ?*HalcChoicesList) ?*ArrayList(HalcString) {
+    std.debug.print("addr of choicesList From ZIG {}\n", .{array.?.handle.?});
     return @ptrCast(*ArrayList(HalcString), @alignCast(@alignOf(ArrayList(HalcString)), array.?.handle.?));
 }
 
@@ -159,6 +176,7 @@ export fn HalcInteractor_GetChoices(
             }) catch {
                 std.debug.print("unable to append strings", .{});
                 halcStrings.deinit();
+                return -1;
             };
         }
 
@@ -171,10 +189,11 @@ export fn HalcInteractor_GetChoices(
         choices.?.* = .{
             .len = halcStrings.items.len,
             .strings = &halcStrings.items[0],
-            .handle = @ptrCast(*c.halc_strings_array_t, handle),
+            .handle = @ptrCast(*c.halc_strings_array_t, @alignCast(@alignOf(ArrayList(HalcString)), handle)),
         };
+        return @intCast(c_int, halcStrings.items.len);
     }
-    return 0;
+    return -1;
 }
 
 export fn HalcInteractor_SelectChoice(
@@ -202,33 +221,8 @@ export fn HalcInteractor_SelectChoice(
 }
 
 export fn HalcChoicesList_Destroy(list: ?*HalcChoicesList) void {
+    _ = list;
     var x = GetArrayListFromChoices(list.?).?;
     x.deinit();
     allocator.destroy(x);
 }
-
-// export fn halc_do_parse(cstr: ?[*:0]const u8) usize {
-//     return if (cstr) |str| halc_do_parse_impl(str) catch null else null;
-// }
-//
-// export fn halc_destroy(story: ?*halc_system_handle_t) void {
-//     story.destroy(story.?);
-// }
-//
-// fn halc_do_parse_impl(cstr: [*:0]const u8) !*halc_system_handle_t {
-//     var rv = try allocator.create(StoryNodes);
-//     errdefer allocator.destroy(rv);
-//
-//     std.debug.print("\n{s}\n", .{cstr});
-//
-//     rv.* = try s.NodeParser.DoParse(std.mem.span(cstr), allocator);
-//
-//     return @ptrCast(*halc_system_handle_t, rv);
-// }
-//
-// export fn halc_test_struct(rv: ?*c.thick_c_handle_t) c_int {
-//     rv.?.* = c.thick_c_handle_t{ .handle_id = 2, .buf = undefined };
-//
-//     std.mem.copy(u8, &rv.?.buf, &.{ 'w', 'a', 'n', 'k', 0 });
-//     return 1;
-// }
