@@ -27,7 +27,7 @@ pub fn build(b: *std.build.Builder) void {
         halcShared.setTarget(target);
         halcShared.setBuildMode(mode);
         halcShared.addIncludeDir("src/c_api/inc");
-        halcShared.setLibCFile(std.build.FileSource{ .path = "libc.txt" });
+        //halcShared.setLibCFile(std.build.FileSource{ .path = "libc.txt" });
         halcShared.bundle_compiler_rt = true;
         halcShared.install();
 

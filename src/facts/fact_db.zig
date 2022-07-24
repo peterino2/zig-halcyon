@@ -1,6 +1,7 @@
 const std = @import("std");
 const values = @import("values.zig");
 const utils = @import("factUtils.zig");
+const TypeDatabase = @import("TypeDatabase.zig");
 
 const ArrayList = std.ArrayList;
 const AutoHashMap = std.AutoHashMap;
@@ -8,6 +9,7 @@ const StringHashMap = std.StringHashMap;
 
 const Initializer = values.Initializer;
 const FactValue = values.FactValue;
+const FactRef = values.FactRef;
 const FactTypeInfo = values.FactTypeInfo;
 
 const BuiltinFactTypes = utils.BuiltinFactTypes;
@@ -34,9 +36,14 @@ pub const FactDatabase = struct {
         return self;
     }
 
-    pub fn executeInstructions(self: *Self, code: FactsInstruction) !void {
-        _ = self;
-        _ = code;
+    pub fn getFactAsRefByLabel(self: Self, label: Label) !?FactRef {
+        var index = self.factsByLabel.get(label.hash);
+
+        if (index != null) {
+            return FactRef{ .value = index };
+        }
+
+        return null;
     }
 
     pub fn getOrAddFactInner(self: *Self, label: Label) !*FactValue {
@@ -148,8 +155,6 @@ test "FactsDatabase" {
     try expect(try factDb.compareGt(MakeLabel("variable2"), MakeLabel("variable3")));
     try expect(try factDb.compareGe(MakeLabel("variable2"), MakeLabel("variable3")));
     try expect(try factDb.compareGe(MakeLabel("variable2"), MakeLabel("variable2")));
-
-    // try this with integers?
 
     var integer0 = try factDb.newFact(MakeLabel("variable3"), BuiltinFactTypes.integer);
     integer0.*.integer.value = 420;

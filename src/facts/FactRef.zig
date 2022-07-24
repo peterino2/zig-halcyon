@@ -2,7 +2,6 @@ const std = @import("std");
 const utils = @import("factUtils.zig");
 
 value: usize,
-typeTag: utils.BuiltinFactTypes,
 
 // required functions
 pub fn prettyPrint(self: @This(), _: anytype) void {
@@ -10,7 +9,7 @@ pub fn prettyPrint(self: @This(), _: anytype) void {
 }
 
 pub fn init(_: std.mem.Allocator) @This() {
-    return .{ .value = 0.0, .typeTag = utils.BuiltinFactTypes._BADTYPE };
+    return .{ .value = 0 };
 }
 
 pub fn deinit(_: *@This(), _: anytype) void {}

@@ -17,7 +17,7 @@ int main(int argc, char** argv)
 			 "Dude: Hey man how's it going?\n"
 			 "$: You notice that the nice man is talking to you\n"
 			 "    > Praise him: \n"
-			 "        Dude: Damn dude thanks so much for your compliment :D\n"
+			 "        Dude: Damn dude thanks so much for your compliment\n"
 			 "    > Call him something bad: \n"
 			 "        Dude: Wow you really hurt my feelings\n"
 			 "    > Can we start over?: \n"
@@ -44,7 +44,7 @@ int main(int argc, char** argv)
     HalcInteractor_GetStoryText(&i, &ostr);
     
     if(ostr.utf8[ostr.len-1] != '\0') 
-        std::cout << "We got a huge issue here null terminator is missing " << std::endl;
+        std::cout << "We got a huge issue here, null terminator is missing " << std::endl;
 
     HalcInteractor_Next(&i);
     
