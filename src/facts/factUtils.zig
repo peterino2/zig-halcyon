@@ -35,7 +35,7 @@ pub fn implement_func_for_tagged_union(
     comptime funcName: []const u8,
     comptime returnType: type,
     args: anytype,
-) returnType {
+) ?returnType {
     const Self = @TypeOf(self);
     inline for (@typeInfo(std.meta.Tag(Self)).Enum.fields) |field| {
         if (@intToEnum(std.meta.Tag(Self), field.value) == self) {
@@ -47,7 +47,7 @@ pub fn implement_func_for_tagged_union(
     }
 
     std.debug.print("\nERROR: missing implementation of `{s}` for {any}\n", .{ funcName, @as(BuiltinFactTypes, self) });
-    unreachable;
+    return null;
 }
 
 pub const BuiltinFactTypes = enum {

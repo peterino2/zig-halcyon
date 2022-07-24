@@ -67,25 +67,25 @@ pub const FactValue = union(BuiltinFactTypes) {
             std.debug.print("... ", .{});
             return;
         }
-        utils.implement_func_for_tagged_union(self, "prettyPrint", void, indentLevel);
+        _ = utils.implement_func_for_tagged_union(self, "prettyPrint", void, indentLevel);
     }
     pub fn compareEq(self: @This(), other: @This(), alloc: std.mem.Allocator) bool {
-        return utils.implement_func_for_tagged_union(self, "compareEq", bool, .{ other, alloc });
+        return utils.implement_func_for_tagged_union(self, "compareEq", bool, .{ other, alloc }) orelse false;
     }
     pub fn compareNe(self: @This(), other: @This(), alloc: std.mem.Allocator) bool {
-        return utils.implement_func_for_tagged_union(self, "compareNe", bool, .{ other, alloc });
+        return utils.implement_func_for_tagged_union(self, "compareNe", bool, .{ other, alloc }) orelse false;
     }
     pub fn compareLt(self: @This(), other: @This(), alloc: std.mem.Allocator) bool {
-        return utils.implement_func_for_tagged_union(self, "compareLt", bool, .{ other, alloc });
+        return utils.implement_func_for_tagged_union(self, "compareLt", bool, .{ other, alloc }) orelse false;
     }
     pub fn compareGt(self: @This(), other: @This(), alloc: std.mem.Allocator) bool {
-        return utils.implement_func_for_tagged_union(self, "compareGt", bool, .{ other, alloc });
+        return utils.implement_func_for_tagged_union(self, "compareGt", bool, .{ other, alloc }) orelse false;
     }
     pub fn compareLe(self: @This(), other: @This(), alloc: std.mem.Allocator) bool {
-        return utils.implement_func_for_tagged_union(self, "compareLe", bool, .{ other, alloc });
+        return utils.implement_func_for_tagged_union(self, "compareLe", bool, .{ other, alloc }) orelse false;
     }
     pub fn compareGe(self: @This(), other: @This(), alloc: std.mem.Allocator) bool {
-        return utils.implement_func_for_tagged_union(self, "compareGe", bool, .{ other, alloc });
+        return utils.implement_func_for_tagged_union(self, "compareGe", bool, .{ other, alloc }) orelse false;
     }
 
     pub fn makeDefault(tag: BuiltinFactTypes, alloc: std.mem.Allocator) @This() {
@@ -104,23 +104,23 @@ pub const FactValue = union(BuiltinFactTypes) {
     }
 
     // optional interface functions
-    pub fn asString(self: @This(), alloc: std.mem.Allocator) ArrayList(u8) {
+    pub fn asString(self: @This(), alloc: std.mem.Allocator) ?ArrayList(u8) {
         return utils.implement_func_for_tagged_union(self, "asString", ArrayList(u8), alloc);
     }
 
-    pub fn asString_static(self: @This()) []const u8 {
+    pub fn asString_static(self: @This()) ?[]const u8 {
         return utils.implement_func_for_tagged_union(self, "asString_static", []const u8, .{});
     }
 
-    pub fn asFloat(self: @This()) f64 {
+    pub fn asFloat(self: @This()) ?f64 {
         return utils.implement_func_for_tagged_union(self, "asFloat", f64, .{});
     }
 
-    pub fn asInteger(self: @This()) i64 {
+    pub fn asInteger(self: @This()) ?i64 {
         return utils.implement_func_for_tagged_union(self, "asInteger", i64, .{});
     }
 
-    pub fn asBoolean(self: @This()) bool {
+    pub fn asBoolean(self: @This()) ?bool {
         return utils.implement_func_for_tagged_union(self, "asBoolean", bool, .{});
     }
 

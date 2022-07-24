@@ -26,9 +26,10 @@ pub const ICompare = struct {
     operation: enum { lessThan, greaterThan, lessEqual, greaterEqual, equal },
 };
 
-pub const IExecDirective = struct {
+pub const IExec = struct {
     directiveLabel: Label,
     args: ?[]?*FactRef,
+    returnValue: ?[]?*FactRef,
 };
 
 pub const Instruction = struct {
@@ -50,17 +51,51 @@ pub const FactFunction = struct {
 
         return self;
     }
+
+    pub fn exec(self: FactFunction, allocator: std.mem.Allocator) FactValue {
+        _ = self;
+        return FactValue.makeDefault(BuiltinFactTypes.integer, allocator);
+    }
 };
 
-// Lets thing for a minute on how specifically how this is
-// supposed to work with interactors and story nodes.
-// a context is created when execution of a function starts.
-pub const FactsVMBranchContext = struct {};
+pub const VMError = struct {
+    executionError: []u8,
+    errorTag: enum {
+        OutOfMemory,
+        BadInstruction,
+        MathError,
+    },
+};
 
-// Lets thing for a minute on how specifically how this is
-// supposed to work with interactors and story nodes.
 // a context is created when execution of a function starts.
+
+// it recieves some contextual information from the top level FactsVM,
+// and it can do stuff like
+pub const FactsVMBranchContext = struct {
+    selected_branch: ?usize,
+    errors: ArrayList(VMError),
+    allocator: std.mem.Allocator,
+
+    pub fn init(allocator: std.mem.Allocator) FactsVMBranchContext {
+        return FactsVMBranchContext{
+            .selected_branch = null,
+            .errors = ArrayList(VMError).init(),
+            .allocator = allocator,
+        };
+    }
+
+    pub fn execTopLevelBranchingFunction(self: *FactsVMBranchContext, func: FactFunction) !void {
+        // a top level branching function accepts zero arguments, and returns a value
+        // that can be coerced into a usize.
+        var value = func.exec(self.allocator);
+        defer value.deinit();
+
+        //if (value.asInteger() == null) {}
+    }
+};
+
+//
 pub const FactsVMDirectiveContext = struct {};
 
-// global state container and director.
+// global state container and executor spawner.
 pub const FactsVM = struct {};

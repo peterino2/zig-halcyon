@@ -95,6 +95,7 @@ pub fn createDefaultTypeInfo(tag: BuiltinFactTypes, alloc: std.mem.Allocator) !S
 pub fn isBuiltin(self: Self) bool {
     return @enumToInt(self.value.typeTag) < @enumToInt(BuiltinFactTypes.userEnum);
 }
+// as string... could just be implemented with pretty print
 
 test "020-typeInfo-init" {
     // create list of all builtin types

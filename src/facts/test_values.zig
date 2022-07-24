@@ -8,7 +8,7 @@ const FactValue = values.FactValue;
 
 pub fn stringTest(string: anytype, expected: []const u8) !void {
     // float to string
-    var x = string.asString(std.testing.allocator);
+    var x = string.asString(std.testing.allocator).?;
     defer x.deinit();
     std.debug.print("{s} vs {s}\n", .{ x.items, expected });
     try std.testing.expect(std.mem.eql(u8, expected, x.items));
@@ -19,7 +19,7 @@ pub fn stringConversionTestLtFloat(istr: anytype, expected: anytype) !void {
     defer string.deinit();
     try string.string.value.appendSlice(istr);
 
-    try std.testing.expect(string.asFloat() < expected);
+    try std.testing.expect(string.asFloat().? < expected);
 }
 
 pub fn stringConversionTestLtInt(istr: anytype, expected: anytype) !void {
@@ -27,7 +27,7 @@ pub fn stringConversionTestLtInt(istr: anytype, expected: anytype) !void {
     defer string.deinit();
     try string.string.value.appendSlice(istr);
 
-    try std.testing.expect(string.asInteger() < expected);
+    try std.testing.expect(string.asInteger().? < expected);
 }
 
 test "015-conversions-string" {
@@ -97,9 +97,9 @@ test "014-conversions-integer" {
     try std.testing.expect(int3.compareLe(float3, std.testing.allocator));
 
     // float to integer
-    try std.testing.expect(float1.float.value >= int1.asFloat());
-    try std.testing.expect(float2.float.value == int2.asFloat());
-    try std.testing.expect(float3.float.value == int3.asFloat());
+    try std.testing.expect(float1.float.value >= int1.asFloat().?);
+    try std.testing.expect(float2.float.value == int2.asFloat().?);
+    try std.testing.expect(float3.float.value == int3.asFloat().?);
 
     try stringTest(float1, "420.69");
     try stringTest(float2, "0");
@@ -133,9 +133,9 @@ test "013-conversions-float" {
     try std.testing.expect(float3.compareLe(float2, std.testing.allocator));
     try std.testing.expect(float3.compareLe(float3, std.testing.allocator));
 
-    try std.testing.expect(int1.integer.value == float1.asInteger());
-    try std.testing.expect(int2.integer.value == float2.asInteger());
-    try std.testing.expect(int3.integer.value == float3.asInteger());
+    try std.testing.expect(int1.integer.value == float1.asInteger().?);
+    try std.testing.expect(int2.integer.value == float2.asInteger().?);
+    try std.testing.expect(int3.integer.value == float3.asInteger().?);
 
     try stringTest(float1, "420.69");
     try stringTest(float2, "0");
@@ -156,17 +156,17 @@ test "012-conversions-boolean" {
 
     bool1.boolean.value = true;
     // boolean to float
-    try std.testing.expect(1.0 == bool1.asFloat());
-    try std.testing.expect(0.0 == bool2.asFloat());
+    try std.testing.expect(1.0 == bool1.asFloat().?);
+    try std.testing.expect(0.0 == bool2.asFloat().?);
     // boolean to int
-    try std.testing.expect(1 == bool1.asInteger());
-    try std.testing.expect(0 == bool2.asInteger());
+    try std.testing.expect(1 == bool1.asInteger().?);
+    try std.testing.expect(0 == bool2.asInteger().?);
     // boolean to string
-    var testString = FactValue{ .string = .{ .value = bool1.asString(std.testing.allocator) } };
+    var testString = FactValue{ .string = .{ .value = bool1.asString(std.testing.allocator).? } };
     defer testString.deinit();
     try std.testing.expect(trueString.compareEq(testString, std.testing.allocator));
 
-    var testString2 = FactValue{ .string = .{ .value = bool2.asString(std.testing.allocator) } };
+    var testString2 = FactValue{ .string = .{ .value = bool2.asString(std.testing.allocator).? } };
     defer testString2.deinit();
     try std.testing.expect(falseString.compareEq(testString2, std.testing.allocator));
 }

@@ -15,11 +15,11 @@ pub fn prettyPrint(self: Self, _: anytype) void {
 pub fn compareEq(self: Self, args: anytype) bool {
     if (@hasDecl(@TypeOf(args[0]), "doesUnionHave_asString_static")) {
         if (args[0].doesUnionHave_asString_static()) {
-            return std.mem.eql(u8, self.value.items, args[0].asString_static());
+            return std.mem.eql(u8, self.value.items, args[0].asString_static() orelse return false);
         }
     }
     if (@hasDecl(@TypeOf(args[0]), "asString")) {
-        var rhs = args[0].asString(args[1]);
+        var rhs = args[0].asString(args[1]) orelse return false;
         defer rhs.deinit();
         return std.mem.eql(u8, self.value.items, rhs.items);
     }
@@ -32,29 +32,29 @@ pub fn compareNe(self: Self, args: anytype) bool {
 
 pub fn compareLt(self: Self, right: anytype) bool {
     if (!@hasDecl(@TypeOf(right), "asString")) return false;
-    return self.value.items.len < right.asString().value.len;
+    return self.value.items.len < right.asString().?.value.len;
 }
 
 pub fn compareGt(self: Self, right: anytype) bool {
     if (!@hasDecl(@TypeOf(right), "asString")) return false;
-    return self.value.items.len > right.asString().value.len;
+    return self.value.items.len > (right.asString() orelse return false).value.len;
 }
 
 pub fn compareLe(self: Self, right: anytype) bool {
     if (!@hasDecl(@TypeOf(right), "asString")) return false;
-    return self.value.items.len <= right.asString().value.len;
+    return self.value.items.len <= (right.asString() orelse return false).value.len;
 }
 
 pub fn compareGe(self: Self, right: anytype) bool {
     if (!@hasDecl(@TypeOf(right), "asString")) return false;
-    return self.value.items.len >= right.asString().value.len;
+    return self.value.items.len >= (right.asString() orelse return false).value.len;
 }
 
-pub fn asString_static(self: @This(), _: anytype) []const u8 {
+pub fn asString_static(self: @This(), _: anytype) ?[]const u8 {
     return self.value.items;
 }
 
-pub fn asString(self: @This(), alloc: anytype) ArrayList(u8) {
+pub fn asString(self: @This(), alloc: anytype) ?ArrayList(u8) {
     var rv = ArrayList(u8).init(alloc);
     rv.appendSlice(self.value.items) catch return rv;
     return rv;
@@ -69,15 +69,15 @@ pub fn deinit(self: Self, _: anytype) void {
 }
 
 // optional functions
-pub fn asInteger(self: @This(), _: anytype) i64 {
-    return std.fmt.parseInt(i64, self.value.items, 0) catch return 0;
+pub fn asInteger(self: @This(), _: anytype) ?i64 {
+    return std.fmt.parseInt(i64, self.value.items, 0) catch return null;
 }
 
-pub fn asFloat(self: @This(), _: anytype) f64 {
-    return std.fmt.parseFloat(f64, self.value.items) catch return 0.0;
+pub fn asFloat(self: @This(), _: anytype) ?f64 {
+    return std.fmt.parseFloat(f64, self.value.items) catch return null;
 }
 
-pub fn asBoolean(self: @This(), _: anytype) bool {
+pub fn asBoolean(self: @This(), _: anytype) ?bool {
     _ = self;
     return false;
 }
