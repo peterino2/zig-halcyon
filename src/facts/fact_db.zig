@@ -36,11 +36,15 @@ pub const FactDatabase = struct {
         return self;
     }
 
-    pub fn getFactAsRefByLabel(self: Self, label: Label) !?FactRef {
+    pub fn getFactFromRef(self: *Self, ref: FactRef) ?*FactValue {
+        return &self.data.items[ref.value];
+    }
+
+    pub fn getFactAsRefByLabel(self: Self, label: Label) ?FactRef {
         var index = self.factsByLabel.get(label.hash);
 
         if (index != null) {
-            return FactRef{ .value = index };
+            return FactRef{ .value = index.? };
         }
 
         return null;

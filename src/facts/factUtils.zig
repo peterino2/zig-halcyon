@@ -30,6 +30,26 @@ pub fn implement_nonconst_func_for_tagged_union(
     unreachable;
 }
 
+pub fn implement_func_for_tagged_union_nonull(
+    self: anytype,
+    comptime funcName: []const u8,
+    comptime returnType: type,
+    args: anytype,
+) returnType {
+    const Self = @TypeOf(self);
+    inline for (@typeInfo(std.meta.Tag(Self)).Enum.fields) |field| {
+        if (@intToEnum(std.meta.Tag(Self), field.value) == self) {
+            if (showDebug) std.debug.print("Executing func {s} for tag {s}\n", .{ funcName, field.name });
+            if (@hasDecl(@TypeOf(@field(self, field.name)), funcName)) {
+                return @field(@field(self, field.name), funcName)(args);
+            }
+        }
+    }
+
+    if (showDebug) std.debug.print("missing implementation of `{s}` for {any}\n", .{ funcName, @as(BuiltinFactTypes, self) });
+    unreachable;
+}
+
 pub fn implement_func_for_tagged_union(
     self: anytype,
     comptime funcName: []const u8,
@@ -46,7 +66,7 @@ pub fn implement_func_for_tagged_union(
         }
     }
 
-    std.debug.print("\nERROR: missing implementation of `{s}` for {any}\n", .{ funcName, @as(BuiltinFactTypes, self) });
+    if (showDebug) std.debug.print("missing implementation of `{s}` for {any}\n", .{ funcName, @as(BuiltinFactTypes, self) });
     return null;
 }
 
