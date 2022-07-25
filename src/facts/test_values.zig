@@ -6,9 +6,10 @@ const ArrayList = std.ArrayList;
 const BuiltinFactTypes = utils.BuiltinFactTypes;
 const FactValue = values.FactValue;
 
+const t_allocator = std.testing.allocator;
 pub fn stringTest(string: anytype, expected: []const u8) !void {
     // float to string
-    var x = string.asString(std.testing.allocator).?;
+    var x = string.asString(t_allocator).?;
     defer x.deinit();
     std.debug.print("{s} vs {s}\n", .{ x.items, expected });
     try std.testing.expect(std.mem.eql(u8, expected, x.items));
@@ -16,7 +17,7 @@ pub fn stringTest(string: anytype, expected: []const u8) !void {
 
 pub fn stringConversionTestLtFloat(istr: anytype, expected: anytype) !void {
     var string = FactValue{ .string = .{ .value = ArrayList(u8).init(std.testing.allocator) } };
-    defer string.deinit();
+    defer string.deinit(t_allocator);
     try string.string.value.appendSlice(istr);
 
     try std.testing.expect(string.asFloat().? < expected);
@@ -24,7 +25,7 @@ pub fn stringConversionTestLtFloat(istr: anytype, expected: anytype) !void {
 
 pub fn stringConversionTestLtInt(istr: anytype, expected: anytype) !void {
     var string = FactValue{ .string = .{ .value = ArrayList(u8).init(std.testing.allocator) } };
-    defer string.deinit();
+    defer string.deinit(t_allocator);
     try string.string.value.appendSlice(istr);
 
     try std.testing.expect(string.asInteger().? < expected);
@@ -151,8 +152,8 @@ test "012-conversions-boolean" {
     var falseString = FactValue.makeDefault(BuiltinFactTypes.string, std.testing.allocator);
     try falseString.string.value.appendSlice("false");
 
-    defer trueString.deinit();
-    defer falseString.deinit();
+    defer trueString.deinit(t_allocator);
+    defer falseString.deinit(t_allocator);
 
     bool1.boolean.value = true;
     // boolean to float
@@ -163,18 +164,18 @@ test "012-conversions-boolean" {
     try std.testing.expect(0 == bool2.asInteger().?);
     // boolean to string
     var testString = FactValue{ .string = .{ .value = bool1.asString(std.testing.allocator).? } };
-    defer testString.deinit();
+    defer testString.deinit(t_allocator);
     try std.testing.expect(trueString.compareEq(testString, std.testing.allocator));
 
     var testString2 = FactValue{ .string = .{ .value = bool2.asString(std.testing.allocator).? } };
-    defer testString2.deinit();
+    defer testString2.deinit(t_allocator);
     try std.testing.expect(falseString.compareEq(testString2, std.testing.allocator));
 }
 
 test "011-validate-all-interfaces" {
     inline for (@typeInfo(BuiltinFactTypes).Enum.fields) |field| {
         var testFact = FactValue.makeDefault(@intToEnum(BuiltinFactTypes, field.value), std.testing.allocator);
-        defer testFact.deinit();
+        defer testFact.deinit(t_allocator);
         std.debug.print("\n", .{});
         testFact.prettyPrint(0);
         _ = testFact;
@@ -187,9 +188,9 @@ test "010-testing-new-facts" {
     var x = FactValue{ .boolean = .{ .value = true } };
 
     var y = try FactValue.fromUtf8("testing", std.testing.allocator);
-    defer y.deinit();
+    defer y.deinit(t_allocator);
     var y2 = try FactValue.fromUtf8("testing", std.testing.allocator);
-    defer y2.deinit();
+    defer y2.deinit(t_allocator);
 
     x.prettyPrint(0);
     std.debug.print("\n", .{});

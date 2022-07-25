@@ -135,8 +135,8 @@ pub const FactValue = union(BuiltinFactTypes) {
         return false;
     }
 
-    pub fn deinit(self: *@This()) void {
+    pub fn deinit(self: *@This(), allocator: std.mem.Allocator) void {
         // _ = self;
-        return utils.implement_nonconst_func_for_tagged_union(self, "deinit", void, .{});
+        return utils.implement_nonconst_func_for_tagged_union(self, "deinit", void, .{allocator});
     }
 };

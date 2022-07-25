@@ -30,24 +30,24 @@ pub fn compareNe(self: Self, args: anytype) bool {
     return !self.compareEq(args);
 }
 
-pub fn compareLt(self: Self, right: anytype) bool {
-    if (!@hasDecl(@TypeOf(right), "asString")) return false;
-    return self.value.items.len < right.asString().?.value.len;
+pub fn compareLt(self: Self, args: anytype) bool {
+    if (!@hasDecl(@TypeOf(args), "asString")) return false;
+    return self.value.items.len < (args[0].asString(args[1]) orelse return false).value.len;
 }
 
-pub fn compareGt(self: Self, right: anytype) bool {
-    if (!@hasDecl(@TypeOf(right), "asString")) return false;
-    return self.value.items.len > (right.asString() orelse return false).value.len;
+pub fn compareGt(self: Self, args: anytype) bool {
+    if (!@hasDecl(@TypeOf(args), "asString")) return false;
+    return self.value.items.len > (args[0].asString(args[1]) orelse return false).value.len;
 }
 
-pub fn compareLe(self: Self, right: anytype) bool {
-    if (!@hasDecl(@TypeOf(right), "asString")) return false;
-    return self.value.items.len <= (right.asString() orelse return false).value.len;
+pub fn compareLe(self: Self, args: anytype) bool {
+    if (!@hasDecl(@TypeOf(args), "asString")) return false;
+    return self.value.items.len <= (args[0].asString(args[1]) orelse return false).value.len;
 }
 
-pub fn compareGe(self: Self, right: anytype) bool {
-    if (!@hasDecl(@TypeOf(right), "asString")) return false;
-    return self.value.items.len >= (right.asString() orelse return false).value.len;
+pub fn compareGe(self: Self, args: anytype) bool {
+    if (!@hasDecl(@TypeOf(args), "asString")) return false;
+    return self.value.items.len >= (args[0].asString(args[1]) orelse return false).value.len;
 }
 
 pub fn asString_static(self: @This(), _: anytype) ?[]const u8 {

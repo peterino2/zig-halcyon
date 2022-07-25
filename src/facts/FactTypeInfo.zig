@@ -58,11 +58,11 @@ pub fn init(alloc: std.mem.Allocator) Self {
     return rv;
 }
 
-pub fn deinit(self: *Self, _: anytype) void {
+pub fn deinit(self: *Self, args: anytype) void {
     self.value.name.deinit();
     var i: usize = 0;
     while (i < self.value.defaultValues.items.len) {
-        self.value.defaultValues.items[i].value.deinit();
+        self.value.defaultValues.items[i].value.deinit(args[0]);
         i += 1;
     }
     self.value.defaultValues.deinit();
@@ -103,7 +103,7 @@ test "020-typeInfo-init" {
         std.debug.print("\n", .{});
         inline for (@typeInfo(BuiltinFactTypes).Enum.fields) |field| {
             var x = try createDefaultTypeInfo(@intToEnum(BuiltinFactTypes, field.value), std.testing.allocator);
-            defer x.deinit(.{});
+            defer x.deinit(.{std.testing.allocator});
             x.prettyPrint(0);
             std.debug.print("\n", .{});
         }

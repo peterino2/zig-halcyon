@@ -42,11 +42,13 @@ const Self = @This();
 
 types: ArrayList(FactTypeInfo),
 typesByLabel: AutoHashMap(u32, TypeRef),
+allocator: std.mem.Allocator,
 
 pub fn init(alloc: std.mem.Allocator) !Self {
     var rv = Self{
         .types = ArrayList(FactTypeInfo).init(alloc),
         .typesByLabel = AutoHashMap(u32, TypeRef).init(alloc),
+        .allocator = alloc,
     };
 
     std.debug.print("\n", .{});
@@ -103,7 +105,7 @@ pub fn getTypeByLabelAsRef(self: Self, label: Label) TypeRef {
 pub fn deinit(self: *Self) void {
     var i: usize = 0;
     while (i < self.types.items.len) {
-        self.types.items[i].deinit(.{});
+        self.types.items[i].deinit(.{self.allocator});
         i += 1;
     }
     self.types.deinit();

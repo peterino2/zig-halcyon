@@ -240,18 +240,13 @@ test "VM hello world" {
 
     _ = instructions;
     _ = context;
-    // create the vm.
-    // add a hello_world fact to the database
-    // create a branch execution context and check that it compares hello_world to false, (context.selected_branch == false)
-    // call a function that sets hello_world to true
-    // do another branch execution context to test hello_world
-    //
 }
 
 test "perf - hello world" {
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
 
+    std.debug.print("FactValue size: {d}\n", .{@sizeOf(FactValue)});
     var allocator = arena.allocator();
 
     var database = try FactDatabase.init(allocator);
