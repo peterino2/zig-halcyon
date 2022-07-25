@@ -61,7 +61,7 @@ pub fn init(alloc: std.mem.Allocator) !Self {
 
         var typeInfo = try FactTypeInfo.createDefaultTypeInfo(
             @intToEnum(BuiltinFactTypes, field.value),
-            std.testing.allocator,
+            alloc,
         );
         // typeInfo.prettyPrint(0);
         try rv.addType(typeInfo);
@@ -106,7 +106,6 @@ pub fn deinit(self: *Self) void {
     var i: usize = 0;
     while (i < self.types.items.len) {
         self.types.items[i].deinit(.{self.allocator});
-        self.allocator.destroy(self.types.items[i].value);
         i += 1;
     }
     self.types.deinit();
@@ -114,7 +113,14 @@ pub fn deinit(self: *Self) void {
 }
 
 test "030-TypeDatabase" {
-    var db = try Self.init(std.testing.allocator);
+    //var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
+    //defer arena.deinit();
+    //var allocator = arena.allocator();
+
+    var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+    const allocator = gpa.allocator();
+
+    var db = try Self.init(allocator);
     defer db.deinit();
 
     try std.testing.expect(db.getTypeByLabelAsPointer(comptime MakeLabel("boolean")) != null);

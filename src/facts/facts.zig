@@ -246,12 +246,11 @@ test "perf-hello-world" {
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
 
-    //var gpa = std.heap.GeneralPurposeAllocator(.{}){};
-
     var allocator = arena.allocator();
 
-    var database = try FactDatabase.init(std.testing.allocator);
+    var database = try FactDatabase.init(allocator);
     defer database.deinit();
+    std.debug.print("{d}\n", .{database.types.types.items.len});
 
     var variable = try database.newFact(MakeLabel("hello"), BuiltinFactTypes.boolean);
     var variable2 = try database.newFact(MakeLabel("hello2"), BuiltinFactTypes.boolean);

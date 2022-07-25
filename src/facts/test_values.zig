@@ -154,8 +154,8 @@ test "012-conversions-boolean" {
     var falseString = FactValue.makeDefault(BuiltinFactTypes.string, std.testing.allocator);
     try falseString.string.value.appendSlice("false");
 
-    defer trueString.deinit(t_allocator);
-    defer falseString.deinit(t_allocator);
+    defer trueString.deinit(std.testing.allocator);
+    defer falseString.deinit(std.testing.allocator);
 
     bool1.boolean.value = true;
     // boolean to float
@@ -165,10 +165,14 @@ test "012-conversions-boolean" {
     try std.testing.expect(1 == bool1.asInteger().?);
     try std.testing.expect(0 == bool2.asInteger().?);
     // boolean to string
+
+    // don't ever use it like this
     var testString = FactValue{ .string = .{ .value = &bool1.asString(std.testing.allocator).? } };
+    defer testString.string.value.deinit();
     try std.testing.expect(trueString.compareEq(testString, std.testing.allocator));
 
     var testString2 = FactValue{ .string = .{ .value = &bool2.asString(std.testing.allocator).? } };
+    defer testString2.string.value.deinit();
     try std.testing.expect(falseString.compareEq(testString2, std.testing.allocator));
 }
 

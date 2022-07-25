@@ -1,7 +1,6 @@
 const std = @import("std");
 const values = @import("values.zig");
 const utils = @import("factUtils.zig");
-const TypeDatabase = @import("TypeDatabase.zig");
 
 const ArrayList = std.ArrayList;
 const ArrayListUnmanaged = std.ArrayListUnmanaged;
@@ -16,7 +15,6 @@ const TypeInfoInner = struct {
     name: ArrayList(u8), // string value
     defaultValues: ArrayList(Initializer),
     typeTag: BuiltinFactTypes,
-    typeDataBase: *TypeDatabase = undefined,
 };
 
 value: *TypeInfoInner,
@@ -76,13 +74,12 @@ pub fn deinit(self: *Self, args: anytype) void {
     }
     self.value.*.defaultValues.deinit();
     _ = allocator;
-    //allocator.destroy(self.value);
+    allocator.destroy(self.value);
 }
 
 pub fn makeFromTag(tag: BuiltinFactTypes, alloc: std.mem.Allocator) !Self {
-    var self = Self{ .value = undefined };
+    var self = Self{ .value = try alloc.create(TypeInfoInner) };
 
-    self.value = try alloc.create(TypeInfoInner);
     self.value.* = .{
         .name = ArrayList(u8).init(alloc),
         .defaultValues = ArrayList(Initializer).init(alloc),
@@ -90,7 +87,7 @@ pub fn makeFromTag(tag: BuiltinFactTypes, alloc: std.mem.Allocator) !Self {
         .allocator = alloc,
     };
 
-    try self.value.name.appendSlice(@tagName(tag));
+    try self.value.*.name.appendSlice(@tagName(tag));
     return self;
 }
 
@@ -102,7 +99,7 @@ pub fn createDefaultTypeInfo(tag: BuiltinFactTypes, alloc: std.mem.Allocator) !S
         .value = FactValue.makeDefault(tag, alloc),
     };
 
-    try typeInfo.value.defaultValues.append(i);
+    try typeInfo.value.*.defaultValues.append(i);
     return typeInfo;
 }
 
