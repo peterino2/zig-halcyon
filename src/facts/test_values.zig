@@ -1,6 +1,7 @@
 const std = @import("std");
 const values = @import("values.zig");
 const utils = @import("factUtils.zig");
+const facts = @import("facts.zig");
 
 const ArrayList = std.ArrayList;
 const BuiltinFactTypes = utils.BuiltinFactTypes;
