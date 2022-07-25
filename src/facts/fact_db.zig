@@ -121,7 +121,7 @@ pub const FactDatabase = struct {
 
         var i: usize = 0;
         while (i < self.data.items.len) : (i += 1) {
-            self.data.items[i].deinit();
+            self.data.items[i].deinit(self.allocator);
         }
 
         self.data.deinit();
@@ -161,12 +161,15 @@ test "FactsDatabase" {
     try expect(try factDb.compareGe(MakeLabel("variable2"), MakeLabel("variable2")));
 
     var integer0 = try factDb.newFact(MakeLabel("variable3"), BuiltinFactTypes.integer);
+    integer0.deinit(factDb.allocator);
     integer0.*.integer.value = 420;
 
     var integer1 = try factDb.newFact(MakeLabel("variable2"), BuiltinFactTypes.integer);
+    integer1.deinit(factDb.allocator);
     integer1.*.integer.value = 421;
 
     var string0 = try factDb.newFact(MakeLabel("variable4"), BuiltinFactTypes.string);
+    string0.deinit(factDb.allocator);
     string0.* = try FactValue.fromUtf8("420", factDb.allocator);
 
     try expect(factDb.data.items.len == 4);

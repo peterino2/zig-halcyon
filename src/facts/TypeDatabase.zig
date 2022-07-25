@@ -106,6 +106,7 @@ pub fn deinit(self: *Self) void {
     var i: usize = 0;
     while (i < self.types.items.len) {
         self.types.items[i].deinit(.{self.allocator});
+        self.allocator.destroy(self.types.items[i].value);
         i += 1;
     }
     self.types.deinit();

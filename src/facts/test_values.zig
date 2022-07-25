@@ -16,7 +16,8 @@ pub fn stringTest(string: anytype, expected: []const u8) !void {
 }
 
 pub fn stringConversionTestLtFloat(istr: anytype, expected: anytype) !void {
-    var string = FactValue{ .string = .{ .value = ArrayList(u8).init(std.testing.allocator) } };
+    var string = FactValue{ .string = .{ .value = try t_allocator.create(ArrayList(u8)) } };
+    string.string.value.* = ArrayList(u8).init(t_allocator);
     defer string.deinit(t_allocator);
     try string.string.value.appendSlice(istr);
 
@@ -24,7 +25,8 @@ pub fn stringConversionTestLtFloat(istr: anytype, expected: anytype) !void {
 }
 
 pub fn stringConversionTestLtInt(istr: anytype, expected: anytype) !void {
-    var string = FactValue{ .string = .{ .value = ArrayList(u8).init(std.testing.allocator) } };
+    var string = FactValue{ .string = .{ .value = try t_allocator.create(ArrayList(u8)) } };
+    string.string.value.* = ArrayList(u8).init(t_allocator);
     defer string.deinit(t_allocator);
     try string.string.value.appendSlice(istr);
 
@@ -163,12 +165,10 @@ test "012-conversions-boolean" {
     try std.testing.expect(1 == bool1.asInteger().?);
     try std.testing.expect(0 == bool2.asInteger().?);
     // boolean to string
-    var testString = FactValue{ .string = .{ .value = bool1.asString(std.testing.allocator).? } };
-    defer testString.deinit(t_allocator);
+    var testString = FactValue{ .string = .{ .value = &bool1.asString(std.testing.allocator).? } };
     try std.testing.expect(trueString.compareEq(testString, std.testing.allocator));
 
-    var testString2 = FactValue{ .string = .{ .value = bool2.asString(std.testing.allocator).? } };
-    defer testString2.deinit(t_allocator);
+    var testString2 = FactValue{ .string = .{ .value = &bool2.asString(std.testing.allocator).? } };
     try std.testing.expect(falseString.compareEq(testString2, std.testing.allocator));
 }
 

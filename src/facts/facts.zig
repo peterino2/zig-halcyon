@@ -52,14 +52,14 @@ pub const InstructionContext = struct {
 
     pub fn deinit(self: *@This()) void {
         for (self.stack.items) |_, i| {
-            self.stack.items[i].deinit();
+            self.stack.items[i].deinit(self.allocator);
         }
         self.stack.deinit();
     }
 
     pub fn resetStack(self: *@This()) void {
         for (self.stack.items) |_, i| {
-            self.stack.items[i].deinit();
+            self.stack.items[i].deinit(self.allocator);
         }
         self.stack.resize(0) catch unreachable;
     }
@@ -242,14 +242,15 @@ test "VM hello world" {
     _ = context;
 }
 
-test "perf - hello world" {
+test "perf-hello-world" {
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
 
-    std.debug.print("FactValue size: {d}\n", .{@sizeOf(FactValue)});
+    //var gpa = std.heap.GeneralPurposeAllocator(.{}){};
+
     var allocator = arena.allocator();
 
-    var database = try FactDatabase.init(allocator);
+    var database = try FactDatabase.init(std.testing.allocator);
     defer database.deinit();
 
     var variable = try database.newFact(MakeLabel("hello"), BuiltinFactTypes.boolean);
@@ -258,6 +259,7 @@ test "perf - hello world" {
     variable2.*.boolean.value = false;
 
     var instructions = try allocator.alloc(Instruction, 2);
+    defer allocator.free(instructions);
 
     instructions[0] = .{ .instr = .{ .compare = .{
         .left = FactValue{ .ref = (database.getFactAsRefByLabel(MakeLabel("hello"))).? },
@@ -270,8 +272,6 @@ test "perf - hello world" {
         .right = FactValue{ .ref = (database.getFactAsRefByLabel(MakeLabel("hello2"))).? },
         .operation = .compareNe,
     } } };
-
-    defer allocator.free(instructions);
 
     var arguments: []const FactValue = try allocator.alloc(FactValue, 1);
     defer allocator.free(arguments);
