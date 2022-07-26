@@ -20,6 +20,11 @@ pub const TypeRef = utils.TypeRef;
 
 pub const FactDatabase = fact_db.FactDatabase;
 
+// an incredibly simple VM specifically designed for querying and setting data in the database.
+// I don't expect that the specific indivudal instructions are hyper optimized for speed
+// But closer to python i'd want individual instructions to be quite rich and capable
+// of doing a lot.
+//
 pub const InstructionContext = struct {
     arguments: []const FactValue,
     iptr: usize = 0,
@@ -44,6 +49,10 @@ pub const InstructionContext = struct {
         };
     }
 
+    pub fn pushValue(self: *@This(), value: FactValue) !void {
+        try self.stack.append(value);
+    }
+
     pub fn execute(self: *@This()) void {
         while (self.iptr < self.instructions.len) : (self.cycleCount += 1) {
             self.instructions[self.iptr].exec(self);
@@ -62,6 +71,10 @@ pub const InstructionContext = struct {
             self.stack.items[i].deinit(self.allocator);
         }
         self.stack.resize(0) catch unreachable;
+    }
+
+    pub fn popValue(self: *@This()) ?FactValue {
+        return self.stack.popOrNull();
     }
 };
 
@@ -115,7 +128,7 @@ pub const ICompare = struct {
             },
         }
 
-        context.stack.append(FactValue{ .boolean = .{ .value = result } }) catch unreachable; // push result to stack
+        context.pushValue(FactValue{ .boolean = .{ .value = result } }) catch unreachable;
         context.iptr += 1;
     }
 };
@@ -133,8 +146,6 @@ pub const ISetValue = struct {
 
 pub const IExec = struct {
     directiveLabel: Label,
-    args: ?[]?*FactRef,
-    returnValue: ?[]?*FactRef,
 
     // raw executions, not used with the builtin zig error system
     pub fn exec(instruction: IExec, context: *InstructionContext) void {
@@ -143,9 +154,41 @@ pub const IExec = struct {
     }
 };
 
+pub const IJump = struct {
+    value: isize,
+    mode: enum {
+        absolute,
+        relative, // good for switch cases and shit like that
+        stackAbsolute,
+        stackRelative,
+    },
+
+    pub fn exec(instr: IJump, context: *InstructionContext) void {
+        switch (instr.mode) {
+            .absolute => {
+                context.iptr = @intCast(usize, instr.value);
+            },
+            .relative => {
+                context.iptr = @intCast(usize, @intCast(isize, context.iptr) + instr.value);
+            },
+            .stackAbsolute => {
+                var val = context.popValue().?;
+                defer val.deinit(context.allocator);
+                context.iptr = @intCast(usize, val.asInteger().?);
+            },
+            .stackRelative => {
+                var val = context.popValue().?;
+                defer val.deinit(context.allocator);
+                context.iptr = @intCast(usize, @intCast(isize, context.iptr) + val.asInteger().?);
+            },
+        }
+    }
+};
+
 pub const InstructionTag = enum {
     compare,
     setValue,
+    jump,
     exec,
 };
 
@@ -153,6 +196,7 @@ pub const Instruction = struct {
     instr: union(InstructionTag) {
         compare: ICompare,
         setValue: ISetValue,
+        jump: IJump,
         exec: IExec,
     },
 
@@ -245,6 +289,12 @@ test "VM hello world" {
 test "perf-hello-world" {
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
+
+    std.debug.print("Instruction size={d} align={d}\n", .{ @sizeOf(Instruction), @alignOf(Instruction) });
+    std.debug.print("ICompare size={d} align={d}\n", .{ @sizeOf(ICompare), @alignOf(ICompare) });
+    std.debug.print("ISetValue size={d} align={d}\n", .{ @sizeOf(ISetValue), @alignOf(ISetValue) });
+    std.debug.print("IJump size={d} align={d}\n", .{ @sizeOf(IJump), @alignOf(IJump) });
+    std.debug.print("IExec size={d} align={d}\n", .{ @sizeOf(IExec), @alignOf(IExec) });
 
     var allocator = arena.allocator();
 

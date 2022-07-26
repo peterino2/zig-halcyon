@@ -70,7 +70,7 @@ pub fn implement_func_for_tagged_union(
     return null;
 }
 
-pub const BuiltinFactTypes = enum {
+pub const BuiltinFactTypes = enum(u8) {
     _BADTYPE, // invalid type, used to mark issues with serdes
 
     // ordinal types
