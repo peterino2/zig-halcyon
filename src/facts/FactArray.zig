@@ -13,6 +13,12 @@ pub fn initWithValue(_: []const u8, _: std.mem.Allocator) @This() {
     return .{ .value = .{} };
 }
 
+pub fn allocPrint(self: @This(), allocator: std.mem.Allocator) ![]const u8 {
+    _ = self;
+    _ = allocator;
+    return "";
+}
+
 pub fn prettyPrint(self: @This(), _: anytype) void {
     _ = self;
     return std.debug.print("array: {{ }}", .{});
