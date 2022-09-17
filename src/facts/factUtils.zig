@@ -79,6 +79,7 @@ pub const BuiltinFactTypes = enum(u8) {
     float,
     typeRef, // use with a TypeDatabase to get type information
     ref, // use with a FactsDatabase to get values.
+    nullType, // represents a nulltype
 
     // allocated types
     array, // array type, contains a typeRef and an array of Facts of that type

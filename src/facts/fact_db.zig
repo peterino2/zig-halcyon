@@ -128,9 +128,19 @@ pub const FactDatabase = struct {
         self.types.deinit();
     }
 
-    pub fn parse(self: *Self, tokens: []const []const u8) !void {
-        _ = self;
-        _ = tokens;
+    pub fn prettyDumpStringAlloc(self: Self, allocator: std.mem.Allocator) ![]const u8 {
+        var ostr = ArrayList(u8).init(allocator);
+        defer ostr.deinit();
+        {
+            var s = try std.fmt.allocPrint(allocator, "database itemCount: {d}", .{self.data.items.len});
+            defer allocator.free(s);
+            try ostr.appendSlice(s);
+        }
+
+        var rv = try allocator.alloc(u8, ostr.items.len);
+        @memcpy(rv.ptr, ostr.items.ptr, ostr.items.len);
+
+        return rv;
     }
 };
 

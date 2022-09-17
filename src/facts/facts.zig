@@ -24,7 +24,7 @@ pub const FactDatabase = fact_db.FactDatabase;
 // I don't expect that the specific indivudal instructions are hyper optimized for speed
 // But closer to python i'd want individual instructions to be quite rich and capable
 // of doing a lot.
-//
+
 pub const InstructionContext = struct {
     arguments: []const FactValue,
     iptr: usize = 0,
@@ -78,6 +78,8 @@ pub const InstructionContext = struct {
     }
 };
 
+// Instruction: Compare
+// operands: lhs, rhs,
 pub const ICompare = struct {
     left: FactValue, // maybe these should be pointers to ?*FactValue?
     right: FactValue,
@@ -133,6 +135,7 @@ pub const ICompare = struct {
     }
 };
 
+// instruction: SetValue
 pub const ISetValue = struct {
     left: FactRef,
     right: FactValue,
@@ -144,6 +147,7 @@ pub const ISetValue = struct {
     }
 };
 
+// instruction: Exec
 pub const IExec = struct {
     directiveLabel: Label,
 
@@ -286,6 +290,71 @@ test "VM hello world" {
     _ = context;
 }
 
+// creates a database with test data from each type of data
+fn create_test_database(allocator: std.mem.Allocator) !FactDatabase {
+    var database = try FactDatabase.init(allocator);
+
+    // load with integers
+    (try database.newFact(MakeLabel("int0"), BuiltinFactTypes.integer)).*.integer.value = 0;
+    (try database.newFact(MakeLabel("int1"), BuiltinFactTypes.integer)).*.integer.value = 1;
+    (try database.newFact(MakeLabel("int1"), BuiltinFactTypes.integer)).*.integer.value = -1;
+
+    // load with booleans
+    (try database.newFact(MakeLabel("bool0"), BuiltinFactTypes.boolean)).*.boolean.value = false;
+    (try database.newFact(MakeLabel("bool1"), BuiltinFactTypes.boolean)).*.boolean.value = true;
+
+    // load with floats
+    (try database.newFact(MakeLabel("f0"), BuiltinFactTypes.float)).*.float.value = 0.0;
+    (try database.newFact(MakeLabel("f1"), BuiltinFactTypes.float)).*.float.value = 1.0;
+    (try database.newFact(MakeLabel("f2"), BuiltinFactTypes.float)).*.float.value = -1.0;
+    (try database.newFact(MakeLabel("f3"), BuiltinFactTypes.float)).*.float.value = 1e9;
+
+    // load with nulls
+    _ = (try database.newFact(MakeLabel("null0"), BuiltinFactTypes.nullType));
+    _ = (try database.newFact(MakeLabel("null1"), BuiltinFactTypes.nullType));
+
+    // load with refs to each type
+    (try database.newFact(MakeLabel("ref0"), BuiltinFactTypes.ref)).*.ref = database.getFactAsRefByLabel(MakeLabel("int0")).?;
+    (try database.newFact(MakeLabel("ref1"), BuiltinFactTypes.ref)).*.ref = database.getFactAsRefByLabel(MakeLabel("f3")).?;
+    (try database.newFact(MakeLabel("ref1"), BuiltinFactTypes.ref)).*.ref = database.getFactAsRefByLabel(MakeLabel("bool0")).?;
+    (try database.newFact(MakeLabel("ref1"), BuiltinFactTypes.ref)).*.ref = database.getFactAsRefByLabel(MakeLabel("null0")).?;
+
+    // load with strings
+
+    {
+        var s = (try database.newFact(MakeLabel("string0"), BuiltinFactTypes.string)).*.string.value;
+        s.clearRetainingCapacity();
+        try s.appendSlice("This is a totally sick string");
+    }
+
+    {
+        var s = (try database.newFact(MakeLabel("string1"), BuiltinFactTypes.string)).*.string.value;
+        s.clearRetainingCapacity();
+        try s.appendSlice("What the fuck did you just say about me");
+    }
+
+    {
+        var s = (try database.newFact(MakeLabel("string2"), BuiltinFactTypes.string)).*.string.value;
+        s.clearRetainingCapacity();
+        try s.appendSlice("");
+    }
+
+    // load with arrays, not available yet..
+
+    return database;
+}
+
+test "i000-compare" {
+    var x = try create_test_database(std.testing.allocator);
+    defer x.deinit();
+
+    var s = try x.prettyDumpStringAlloc(std.testing.allocator);
+    defer std.testing.allocator.free(s);
+
+    std.debug.print("\n", .{});
+    std.debug.print("{s}\n", .{s});
+}
+
 test "perf-hello-world" {
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
@@ -355,7 +424,14 @@ test "perf-hello-world" {
 
     std.debug.print("stack[0] = {any}\n", .{context.stack.items[0]});
     std.debug.print("stack[1] = {any}\n", .{context.stack.items[1]});
-    std.debug.print("instructions executed = {d} instructions per second = {d}\n", .{ context.cycleCount, @intToFloat(f64, context.cycleCount) / (@intToFloat(f64, endTime - startTime) / 1000000000) });
+
+    std.debug.print(
+        "instructions executed = {d} instructions per second = {d}\n",
+        .{
+            context.cycleCount,
+            @intToFloat(f64, context.cycleCount) / (@intToFloat(f64, endTime - startTime) / 1000000000),
+        },
+    );
 
     _ = instructions;
     _ = context;
@@ -365,4 +441,5 @@ test "perf-hello-world" {
     // call a function that sets hello_world to true
     // do another branch execution context to test hello_world
     //
+    // Wow.. i Am actually really fucking bad at writing assembly
 }

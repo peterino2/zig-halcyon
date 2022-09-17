@@ -16,6 +16,7 @@ pub const FactInteger = @import("FactInteger.zig");
 pub const FactFloat = @import("FactFloat.zig");
 pub const FactTypeRef = TypeRef;
 pub const FactRef = @import("FactRef.zig");
+pub const FactNull = @import("FactNull.zig");
 
 pub const FactArray = @import("FactArray.zig");
 pub const FactString = @import("FactString.zig");
@@ -39,6 +40,7 @@ pub const FactValue = union(BuiltinFactTypes) {
     float: FactFloat,
     typeRef: FactTypeRef,
     ref: FactRef,
+    nullType: FactNull,
 
     // array types
     array: FactArray,

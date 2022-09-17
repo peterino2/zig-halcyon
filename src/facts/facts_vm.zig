@@ -43,14 +43,28 @@ const ILoad = struct {
     operand: u64,
 };
 
-pub const Instruction = struct {
-    instr: union(Opcode) // tag = 1 byte
-    {
-        load: ILoad,
-        store: struct {},
-        compare: struct {},
-        jump: struct {},
-    },
+const OpCode = enum(u5) {
+    load,
+    store,
+    exec,
+    compare,
+};
+
+const compareMode = enum(u3) {
+    eq,
+    ne,
+    gt,
+    lt,
+    ge,
+    le,
+};
+
+pub const Instruction = packed struct {
+    // byte 0-15 -----
+    operands: [2]FactValue, //
+    // byte 16 ----
+    opcode: OpCode, // 5 bits opcode
+    mode: u3, // 3 bits operation mode,
 };
 
 pub const InstructionContext = struct {
