@@ -159,6 +159,13 @@ pub const FactDatabase = struct {
 
         return rv;
     }
+
+    pub fn prettyPrint(self: Self) void {
+        var x = self.prettyDumpStringAlloc(self.allocator) catch unreachable;
+        defer self.allocator.free(x);
+
+        std.debug.print("\n{s}\n", .{x});
+    }
 };
 
 test "FactsDatabase" {

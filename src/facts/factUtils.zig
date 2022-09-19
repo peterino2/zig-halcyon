@@ -6,6 +6,8 @@ const AutoHashMap = std.AutoHashMap;
 const StringHashMap = std.StringHashMap;
 const showDebug = false;
 
+pub var printAllocator: std.mem.Allocator = std.heap.c_allocator;
+
 pub fn printIndents(indentLevel: usize) void {
     var i = indentLevel;
     while (i > 0) : (i -= 1) {
