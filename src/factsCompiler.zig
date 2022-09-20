@@ -9,9 +9,28 @@ const AstNodeType = enum {
 };
 
 const AstNode = struct {
+    const Self = @This();
     nodeType: AstNodeType,
-    children: []*AstNode,
+    children: ArrayListUnmanaged(*AstNode),
+    tok: []const u8 = "NonTerminal",
+
+    pub fn newChild(self: *Self, allocator: std.mem.Allocator) !*AstNode {
+        var node = try allocator.create(AstNode);
+
+        try self.children.append(node);
+        return node;
+    }
+
+    pub fn prettyPrint(self: Self, indentLevel: usize) void {
+        var i: usize = 0;
+        while (i < indentLevel) : (i += 1) {
+            std.debug.print("  ", .{});
+        }
+
+        std.debug.print("type: {any} tok: {s}", .{ self.nodeType, self.tok });
+    }
 };
+
 // examples:
 //
 // g.hello == true
@@ -30,7 +49,6 @@ const AstNode = struct {
 // operation = ( expression op expression ) | ( unaryop expression )
 // op = EQUIV | NOT_EQUIV | GREATER_EQ | LESS_EQ | GREATER | LESS
 // unaryop = NOT | AMPERSAND
-//
 
 const CompilerAst = struct {
     ast_generated: bool = false,
