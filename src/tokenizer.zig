@@ -196,6 +196,7 @@ pub const TokenStream = struct {
         "-",
         ",",
         ";",
+        "&",
         "\"",
     };
 
@@ -239,6 +240,7 @@ pub const TokenStream = struct {
         MINUS,
         COMMA,
         SEMICOLON,
+        AMPERSAND,
         DOUBLE_QUOTE,
         ENUM_COUNT,
         // other token types

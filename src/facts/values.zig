@@ -24,6 +24,7 @@ pub const FactString = @import("FactString.zig");
 pub const FactTypeInfo = @import("FactTypeInfo.zig");
 pub const FactUserEnum = @import("FactUserEnum.zig");
 pub const FactUserStruct = @import("FactUserStruct.zig");
+pub const FactStackRef = @import("FactStackRef.zig");
 
 pub const Initializer = struct {
     label: Label,
@@ -50,6 +51,9 @@ pub const FactValue = union(BuiltinFactTypes) {
     typeInfo: FactTypeInfo,
     userEnum: FactUserEnum,
     userStruct: FactUserStruct,
+
+    // compiler/vm only types
+    stackRef: FactStackRef,
 
     // helper functions.
     pub fn fromUtf8(value: []const u8, alloc: std.mem.Allocator) !@This() {

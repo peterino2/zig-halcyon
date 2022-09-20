@@ -91,6 +91,9 @@ pub const BuiltinFactTypes = enum(u8) {
     typeInfo, // this is an entry in the type database, contains description and prototype of what a type is.
     userEnum, // user defined enum type. It's backed by an integer type
     userStruct, // this is a struct type, contains a hashmap of fields
+
+    // instruction only types
+    stackRef, // like a factRef, but for the stack
 };
 
 pub const Label = struct {
