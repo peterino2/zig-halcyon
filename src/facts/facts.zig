@@ -7,6 +7,7 @@ pub const fact_db = @import("fact_db.zig");
 const ArrayList = std.ArrayList;
 const AutoHashMap = std.AutoHashMap;
 const StringHashMap = std.StringHashMap;
+const ArrayListUnmanaged = std.ArrayListUnmanaged;
 
 pub const Initializer = values.Initializer;
 pub const FactValue = values.FactValue;
@@ -248,6 +249,10 @@ fn testMakeSimpleDatabase(allocator: std.mem.Allocator) !FactDatabase {
 }
 
 test "instr-setValue" {
+    // instructions tested:
+    // compare,
+    // setValue,
+
     const allocator = std.testing.allocator;
     var db = try testMakeSimpleDatabase(allocator);
     defer db.deinit();
