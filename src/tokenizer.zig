@@ -169,6 +169,10 @@ pub const sampleData =
 
 pub const TokenStream = struct {
     const TokenDefinitions: []const []const u8 = &.{
+        "==",
+        "!=",
+        "<=",
+        ">=",
         "[",
         "]",
         "@",
@@ -192,6 +196,7 @@ pub const TokenStream = struct {
         "-",
         ",",
         ";",
+        "&",
         "\"",
     };
 
@@ -208,6 +213,10 @@ pub const TokenStream = struct {
     };
 
     pub const TokenType = enum {
+        EQUIV,
+        NOT_EQUIV,
+        LESS_EQ,
+        GREATER_EQ,
         L_SQBRACK,
         R_SQBRACK,
         AT,
@@ -231,6 +240,7 @@ pub const TokenStream = struct {
         MINUS,
         COMMA,
         SEMICOLON,
+        AMPERSAND,
         DOUBLE_QUOTE,
         ENUM_COUNT,
         // other token types
@@ -327,10 +337,14 @@ pub const TokenStream = struct {
                     }
 
                     inline for (TokenDefinitions) |tok, i| {
-                        if (!shouldBreak and std.mem.eql(u8, self.slice, tok)) {
-                            try self.tokens.append(self.slice);
+                        var checkSlice = self.slice;
+                        if (self.startIndex + tok.len < self.source.len) {
+                            checkSlice = self.source[self.startIndex .. self.startIndex + tok.len];
+                        }
+                        if (!shouldBreak and std.mem.eql(u8, checkSlice, tok)) {
+                            try self.tokens.append(checkSlice);
                             try self.token_types.append(@intToEnum(TokenType, i));
-                            self.startIndex = self.startIndex + self.length;
+                            self.startIndex = self.startIndex + checkSlice.len;
                             self.length = 0;
                             self.mode = ParserMode.default;
                             shouldBreak = true;

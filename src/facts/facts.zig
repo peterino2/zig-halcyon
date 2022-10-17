@@ -7,6 +7,7 @@ pub const fact_db = @import("fact_db.zig");
 const ArrayList = std.ArrayList;
 const AutoHashMap = std.AutoHashMap;
 const StringHashMap = std.StringHashMap;
+const ArrayListUnmanaged = std.ArrayListUnmanaged;
 
 pub const Initializer = values.Initializer;
 pub const FactValue = values.FactValue;
@@ -24,7 +25,7 @@ pub const FactDatabase = fact_db.FactDatabase;
 // I don't expect that the specific indivudal instructions are hyper optimized for speed
 // But closer to python i'd want individual instructions to be quite rich and capable
 // of doing a lot.
-//
+
 pub const InstructionContext = struct {
     arguments: []const FactValue,
     iptr: usize = 0,
@@ -67,8 +68,8 @@ pub const InstructionContext = struct {
     }
 
     pub fn resetStack(self: *@This()) void {
-        for (self.stack.items) |_, i| {
-            self.stack.items[i].deinit(self.allocator);
+        for (self.stack.items) |*item| {
+            item.deinit(self.allocator);
         }
         self.stack.resize(0) catch unreachable;
     }
@@ -78,6 +79,8 @@ pub const InstructionContext = struct {
     }
 };
 
+// Instruction: Compare
+// operands: lhs, rhs,
 pub const ICompare = struct {
     left: FactValue, // maybe these should be pointers to ?*FactValue?
     right: FactValue,
@@ -133,17 +136,23 @@ pub const ICompare = struct {
     }
 };
 
+// instruction: SetValue
 pub const ISetValue = struct {
     left: FactRef,
     right: FactValue,
-    operation: enum { lessThan, greaterThan, lessEqual, greaterEqual, equal },
+    operation: enum { default, dereference },
 
-    pub fn exec(instruction: @This(), context: *InstructionContext) void {
-        _ = instruction;
-        _ = context;
+    pub fn exec(i: @This(), c: *InstructionContext) void {
+        defer c.iptr += 1;
+        if (std.meta.activeTag(i.right) == BuiltinFactTypes.ref) {
+            c.database.data.items[i.left.value] = c.database.data.items[i.right.ref.value];
+            return;
+        }
+        c.database.data.items[i.left.value] = i.right;
     }
 };
 
+// instruction: Exec
 pub const IExec = struct {
     directiveLabel: Label,
 
@@ -192,6 +201,17 @@ pub const InstructionTag = enum {
     exec,
 };
 
+pub const IAdd = struct {
+    left: FactRef,
+    right: FactValue,
+    operation: enum { default, dereference },
+
+    pub fn exec(self: Instruction, context: *InstructionContext) void {
+        _ = self;
+        _ = context;
+    }
+};
+
 pub const Instruction = struct {
     instr: union(InstructionTag) {
         compare: ICompare,
@@ -201,29 +221,8 @@ pub const Instruction = struct {
     },
 
     pub fn exec(self: Instruction, context: *InstructionContext) void {
-        // I don't think this is the smartest dispatcher, but it's surprisingly decent
+        // todo: make a vtable for this dispatcher.
         utils.implement_func_for_tagged_union_nonull(self.instr, "exec", void, context);
-    }
-};
-
-// There are native functions called directives, then there are
-// compiled sequences of instructions called FactsFunctions
-pub const FactFunction = struct {
-    instructions: ArrayList(Instruction),
-    arguments: ArrayList(FactRef),
-
-    pub fn init(allocator: std.mem.Allocator) !FactFunction {
-        var self = FactFunction{
-            .instructions = ArrayList(Instruction).init(allocator),
-        };
-
-        return self;
-    }
-
-    pub fn exec(self: FactFunction, allocator: std.mem.Allocator, context: anytype) FactValue {
-        _ = self;
-        _ = context;
-        return FactValue.makeDefault(BuiltinFactTypes.integer, allocator);
     }
 };
 
@@ -235,6 +234,52 @@ pub const VMError = struct {
         MathError,
     },
 };
+
+fn testMakeSimpleDatabase(allocator: std.mem.Allocator) !FactDatabase {
+    var database = try FactDatabase.init(allocator);
+
+    var variable = try database.newFact(MakeLabel("hello"), BuiltinFactTypes.boolean);
+    var variable2 = try database.newFact(MakeLabel("hello2"), BuiltinFactTypes.boolean);
+    var variable3 = try database.newFact(MakeLabel("hello3"), BuiltinFactTypes.integer);
+    variable.*.boolean.value = true;
+    variable2.*.boolean.value = false;
+    variable3.*.integer.value = 420;
+
+    return database;
+}
+
+test "instr-setValue" {
+    // instructions tested:
+    // compare,
+    // setValue,
+
+    const allocator = std.testing.allocator;
+    var db = try testMakeSimpleDatabase(allocator);
+    defer db.deinit();
+
+    var instructions = try allocator.alloc(Instruction, 2);
+    defer allocator.free(instructions);
+    instructions[0] = .{ .instr = .{ .setValue = .{
+        .left = (db.getFactAsRefByLabel(MakeLabel("hello")).?),
+        .right = FactValue{ .boolean = .{ .value = false } },
+        .operation = .default,
+    } } };
+
+    instructions[1] = .{ .instr = .{ .setValue = .{
+        .left = (db.getFactAsRefByLabel(MakeLabel("hello2")).?),
+        .right = FactValue{ .ref = (db.getFactAsRefByLabel(MakeLabel("hello3"))).? },
+        .operation = .default,
+    } } };
+
+    var arguments: []const FactValue = try allocator.alloc(FactValue, 1);
+    defer allocator.free(arguments);
+
+    var context = InstructionContext.init(arguments, &db, instructions, allocator);
+    defer context.deinit();
+    context.execute();
+
+    db.prettyPrint();
+}
 
 test "VM hello world" {
     const allocator = std.testing.allocator;
@@ -248,6 +293,28 @@ test "VM hello world" {
 
     var instructions = try allocator.alloc(Instruction, 2);
 
+    // instructions are kept in a kind of serialized intermediate and are finalized
+    // after the database that the instruction is intended for is constructed. and loaded
+    //
+    // sequence:
+    //  1. content is parsed and compiled into halcyon story nodes
+    //  2. database is generated from reference list and populated with default values
+    //  3. (optional) database current values are loaded from a session file
+    //  4. instruction contexts are compiled from all vm execution contexts
+    //  5. instruction contexts are finalized, instruction contexts are attached to story nodes.
+    //  6. Halc interactors can now be spawned and the API is ready.
+
+    // virtual machine examples:
+    //
+    // @setVar(PersonA.isPissedOff = true);
+    // [label; @once(tag)]
+    // @if( hello == true );    // boolean
+    // @if( hello == 0.2 );     // value
+    // @if( hello == "obama" ); // string
+
+    // compiled version of the the following halcyon program:
+    // g.hello == g.hello2
+    // compiled against a specific database.
     instructions[0] = .{ .instr = .{ .compare = .{
         .left = FactValue{ .ref = (database.getFactAsRefByLabel(MakeLabel("hello"))).? },
         .right = FactValue{ .ref = (database.getFactAsRefByLabel(MakeLabel("hello2"))).? },
@@ -286,11 +353,76 @@ test "VM hello world" {
     _ = context;
 }
 
+// creates a database with test data from each type of data
+fn create_test_database(allocator: std.mem.Allocator) !FactDatabase {
+    var database = try FactDatabase.init(allocator);
+
+    // load with integers
+    (try database.newFact(MakeLabel("int0"), BuiltinFactTypes.integer)).*.integer.value = 0;
+    (try database.newFact(MakeLabel("int1"), BuiltinFactTypes.integer)).*.integer.value = 1;
+    (try database.newFact(MakeLabel("int1"), BuiltinFactTypes.integer)).*.integer.value = -1;
+
+    // load with booleans
+    (try database.newFact(MakeLabel("bool0"), BuiltinFactTypes.boolean)).*.boolean.value = false;
+    (try database.newFact(MakeLabel("bool1"), BuiltinFactTypes.boolean)).*.boolean.value = true;
+
+    // load with floats
+    (try database.newFact(MakeLabel("f0"), BuiltinFactTypes.float)).*.float.value = 0.0;
+    (try database.newFact(MakeLabel("f1"), BuiltinFactTypes.float)).*.float.value = 1.0;
+    (try database.newFact(MakeLabel("f2"), BuiltinFactTypes.float)).*.float.value = -1.0;
+    (try database.newFact(MakeLabel("f3"), BuiltinFactTypes.float)).*.float.value = 1e9;
+
+    // load with nulls
+    _ = (try database.newFact(MakeLabel("null0"), BuiltinFactTypes.nullType));
+    _ = (try database.newFact(MakeLabel("null1"), BuiltinFactTypes.nullType));
+
+    // load with refs to each type
+    (try database.newFact(MakeLabel("ref0"), BuiltinFactTypes.ref)).*.ref = database.getFactAsRefByLabel(MakeLabel("int0")).?;
+    (try database.newFact(MakeLabel("ref1"), BuiltinFactTypes.ref)).*.ref = database.getFactAsRefByLabel(MakeLabel("f3")).?;
+    (try database.newFact(MakeLabel("ref1"), BuiltinFactTypes.ref)).*.ref = database.getFactAsRefByLabel(MakeLabel("bool0")).?;
+    (try database.newFact(MakeLabel("ref1"), BuiltinFactTypes.ref)).*.ref = database.getFactAsRefByLabel(MakeLabel("null0")).?;
+
+    // load with strings
+
+    {
+        var s = (try database.newFact(MakeLabel("string0"), BuiltinFactTypes.string)).*.string.value;
+        s.clearRetainingCapacity();
+        try s.appendSlice("This is a totally sick string");
+    }
+
+    {
+        var s = (try database.newFact(MakeLabel("string1"), BuiltinFactTypes.string)).*.string.value;
+        s.clearRetainingCapacity();
+        try s.appendSlice("What the fuck did you just say about me");
+    }
+
+    {
+        var s = (try database.newFact(MakeLabel("string2"), BuiltinFactTypes.string)).*.string.value;
+        s.clearRetainingCapacity();
+        try s.appendSlice("");
+    }
+
+    // load with arrays, not available yet..
+
+    return database;
+}
+
+test "i000-compare" {
+    var x = try create_test_database(std.testing.allocator);
+    defer x.deinit();
+
+    var s = try x.prettyDumpStringAlloc(std.testing.allocator);
+    defer std.testing.allocator.free(s);
+
+    std.debug.print("\n", .{});
+    std.debug.print("{s}\n", .{s});
+}
+
 test "perf-hello-world" {
     var arena = std.heap.ArenaAllocator.init(std.heap.page_allocator);
     defer arena.deinit();
 
-    std.debug.print("Instruction size={d} align={d}\n", .{ @sizeOf(Instruction), @alignOf(Instruction) });
+    std.debug.print("\nInstruction size={d} align={d}\n", .{ @sizeOf(Instruction), @alignOf(Instruction) });
     std.debug.print("ICompare size={d} align={d}\n", .{ @sizeOf(ICompare), @alignOf(ICompare) });
     std.debug.print("ISetValue size={d} align={d}\n", .{ @sizeOf(ISetValue), @alignOf(ISetValue) });
     std.debug.print("IJump size={d} align={d}\n", .{ @sizeOf(IJump), @alignOf(IJump) });
@@ -342,6 +474,7 @@ test "perf-hello-world" {
     std.debug.print("testing 20M instructions\n", .{});
     i = 0;
     context.cycleCount = 0;
+
     const startTime = timer.read();
     while (i < 10000000) : (i += 1) {
         context.iptr = 0;
@@ -355,7 +488,14 @@ test "perf-hello-world" {
 
     std.debug.print("stack[0] = {any}\n", .{context.stack.items[0]});
     std.debug.print("stack[1] = {any}\n", .{context.stack.items[1]});
-    std.debug.print("instructions executed = {d} instructions per second = {d}\n", .{ context.cycleCount, @intToFloat(f64, context.cycleCount) / (@intToFloat(f64, endTime - startTime) / 1000000000) });
+
+    std.debug.print(
+        "instructions executed = {d} instructions per second = {d}\n",
+        .{
+            context.cycleCount,
+            @intToFloat(f64, context.cycleCount) / (@intToFloat(f64, endTime - startTime) / 1000000000),
+        },
+    );
 
     _ = instructions;
     _ = context;
@@ -365,4 +505,24 @@ test "perf-hello-world" {
     // call a function that sets hello_world to true
     // do another branch execution context to test hello_world
     //
+    // Wow.. i Am actually really fucking bad at writing assembly
+}
+
+test "perf-show-fact-sizes" {
+    std.debug.print("\nInstruction size={d} align={d}\n", .{ @sizeOf(Instruction), @alignOf(Instruction) });
+    std.debug.print("ICompare size={d} align={d}\n", .{ @sizeOf(ICompare), @alignOf(ICompare) });
+    std.debug.print("ISetValue size={d} align={d}\n", .{ @sizeOf(ISetValue), @alignOf(ISetValue) });
+    std.debug.print("IJump size={d} align={d}\n", .{ @sizeOf(IJump), @alignOf(IJump) });
+    std.debug.print("IExec size={d} align={d}\n", .{ @sizeOf(IExec), @alignOf(IExec) });
+
+    std.debug.print("FactValue size: {d}\n", .{@sizeOf(values.FactValue)});
+    std.debug.print("Fact_BADTYPE size: {d}\n", .{@sizeOf(values.Fact_BADTYPE)});
+    std.debug.print("FactBoolean size: {d}\n", .{@sizeOf(values.FactBoolean)});
+    std.debug.print("FactInteger size: {d}\n", .{@sizeOf(values.FactInteger)});
+    std.debug.print("FactFloat size: {d}\n", .{@sizeOf(values.FactFloat)});
+    std.debug.print("FactTypeRef size: {d}\n", .{@sizeOf(values.FactTypeRef)});
+    std.debug.print("FactArray size: {d}\n", .{@sizeOf(values.FactArray)});
+    std.debug.print("FactString size: {d}\n", .{@sizeOf(values.FactString)});
+    std.debug.print("FactTypeInfo size: {d}\n", .{@sizeOf(values.FactTypeInfo)});
+    std.debug.print("FactUserEnum size: {d}\n", .{@sizeOf(values.FactUserEnum)});
 }

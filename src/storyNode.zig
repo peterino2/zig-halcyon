@@ -318,7 +318,7 @@ pub const Interactor = struct {
 
     pub fn displayCurrentContent(self: Self) void {
         const str = if (self.story.speakerName.get(self.node)) |speaker| speaker.asUtf8Native() else "narrator";
-        std.debug.print("{d}> {s}: {s}\n", .{ self.node.id, str, self.story.textContent.items[self.node.id].asUtf8Native() });
+        std.debug.print("{d}> {!s}: {!s}\n", .{ self.node.id, str, self.story.textContent.items[self.node.id].asUtf8Native() });
     }
 
     pub fn getCurrentStoryText(self: Self) []const u8 {
@@ -762,7 +762,7 @@ pub const NodeParser = struct {
                 }
 
                 if (rule.label) |label| {
-                    std.debug.print("goto from {d} -> {s}\n", .{ rule.node, label });
+                    std.debug.print("goto from {any} -> {s}\n", .{ rule.node, label });
                     _ = try self.story.setLinkByLabel(rule.node, label);
                 } else if (rule.explicit_goto) |goto| {
                     _ = try self.story.setLink(rule.node, goto);
@@ -1111,7 +1111,7 @@ test "parse with nodes" {
     for (story.textContent.items) |content, i| {
         const node = story.instances.items[i];
         std.debug.assert(node.id == i);
-        std.debug.print("{d}> {s}\n", .{ i, content.asUtf8Native() });
+        std.debug.print("{d}> {!s}\n", .{ i, content.asUtf8Native() });
     }
     std.debug.print("\n", .{});
 }
@@ -1127,12 +1127,12 @@ test "parse simplest with no-conditionals" {
         const node = story.instances.items[i];
         std.debug.assert(node.id == i);
         if (story.conditionalBlock.contains(node)) {
-            std.debug.print("{d}> {s}\n", .{ i, content.asUtf8Native() });
+            std.debug.print("{d}> {!s}\n", .{ i, content.asUtf8Native() });
         } else {
             if (story.speakerName.get(node)) |speaker| {
-                std.debug.print("{d}> STORY_TEXT> {s}: {s} ", .{ i, speaker.asUtf8Native(), content.asUtf8Native() });
+                std.debug.print("{d}> STORY_TEXT> {!s}: {!s} ", .{ i, speaker.asUtf8Native(), content.asUtf8Native() });
             } else {
-                std.debug.print("{d}> STORY_TEXT> $: {s} ", .{ i, content.asUtf8Native() });
+                std.debug.print("{d}> STORY_TEXT> $: {!s} ", .{ i, content.asUtf8Native() });
             }
 
             if (story.passThrough.items[node.id]) {
@@ -1147,7 +1147,7 @@ test "parse simplest with no-conditionals" {
         if (story.choices.get(node)) |choices| {
             std.debug.print("\n", .{});
             for (choices.items) |c| {
-                std.debug.print("    -> {d}\n", .{c});
+                std.debug.print("    -> {any}\n", .{c});
             }
         }
         std.debug.print("\n", .{});

@@ -19,6 +19,8 @@ const TypeRef = utils.TypeRef;
 
 pub const FactDatabase = struct {
     types: TypeDatabase,
+
+    names: ArrayList(Label),
     data: ArrayList(FactValue), // we will typically only ever access these guys through pointers
     factsByLabel: AutoHashMap(u32, usize),
     allocator: std.mem.Allocator,
@@ -29,6 +31,7 @@ pub const FactDatabase = struct {
         var self: Self = .{
             .types = try TypeDatabase.init(allocator),
             .data = ArrayList(FactValue).init(allocator),
+            .names = ArrayList(Label).init(allocator),
             .factsByLabel = AutoHashMap(u32, usize).init(allocator),
             .allocator = allocator,
         };
@@ -58,6 +61,8 @@ pub const FactDatabase = struct {
 
         var index = self.data.items.len;
         try self.factsByLabel.put(label.hash, index);
+        try self.names.append(label);
+
         return try self.data.addOne();
     }
 
@@ -125,12 +130,41 @@ pub const FactDatabase = struct {
         }
 
         self.data.deinit();
+        self.names.deinit();
         self.types.deinit();
     }
 
-    pub fn parse(self: *Self, tokens: []const []const u8) !void {
-        _ = self;
-        _ = tokens;
+    pub fn prettyDumpStringAlloc(self: Self, allocator: std.mem.Allocator) ![]const u8 {
+        var ostr = ArrayList(u8).init(allocator);
+        defer ostr.deinit();
+        {
+            var s = try std.fmt.allocPrint(allocator, "database itemCount: {d}", .{self.data.items.len});
+            defer allocator.free(s);
+            try ostr.appendSlice(s);
+        }
+
+        for (self.names.items) |name, i| {
+            var s = try std.fmt.allocPrint(allocator, "\n {d}: name={s}", .{ i, name.utf8 });
+            defer allocator.free(s);
+            try ostr.appendSlice(s);
+        }
+
+        for (self.data.items) |item, i| {
+            std.debug.print("\n {d}: ", .{i});
+            item.prettyPrint(0);
+        }
+
+        var rv = try allocator.alloc(u8, ostr.items.len);
+        @memcpy(rv.ptr, ostr.items.ptr, ostr.items.len);
+
+        return rv;
+    }
+
+    pub fn prettyPrint(self: Self) void {
+        var x = self.prettyDumpStringAlloc(self.allocator) catch unreachable;
+        defer self.allocator.free(x);
+
+        std.debug.print("\n{s}\n", .{x});
     }
 };
 

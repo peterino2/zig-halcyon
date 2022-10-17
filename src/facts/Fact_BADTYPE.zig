@@ -26,3 +26,9 @@ pub fn compareNe(_: @This(), right: anytype) bool {
 }
 
 pub fn deinit(_: *@This(), _: anytype) void {}
+
+pub fn allocPrint(self: @This(), allocator: std.mem.Allocator) ![]const u8 {
+    _ = self;
+    _ = allocator;
+    return "";
+}

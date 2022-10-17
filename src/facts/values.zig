@@ -16,6 +16,7 @@ pub const FactInteger = @import("FactInteger.zig");
 pub const FactFloat = @import("FactFloat.zig");
 pub const FactTypeRef = TypeRef;
 pub const FactRef = @import("FactRef.zig");
+pub const FactNull = @import("FactNull.zig");
 
 pub const FactArray = @import("FactArray.zig");
 pub const FactString = @import("FactString.zig");
@@ -23,6 +24,7 @@ pub const FactString = @import("FactString.zig");
 pub const FactTypeInfo = @import("FactTypeInfo.zig");
 pub const FactUserEnum = @import("FactUserEnum.zig");
 pub const FactUserStruct = @import("FactUserStruct.zig");
+pub const FactStackRef = @import("FactStackRef.zig");
 
 pub const Initializer = struct {
     label: Label,
@@ -39,6 +41,7 @@ pub const FactValue = union(BuiltinFactTypes) {
     float: FactFloat,
     typeRef: FactTypeRef,
     ref: FactRef,
+    nullType: FactNull,
 
     // array types
     array: FactArray,
@@ -48,6 +51,9 @@ pub const FactValue = union(BuiltinFactTypes) {
     typeInfo: FactTypeInfo,
     userEnum: FactUserEnum,
     userStruct: FactUserStruct,
+
+    // compiler/vm only types
+    stackRef: FactStackRef,
 
     // helper functions.
     pub fn fromUtf8(value: []const u8, alloc: std.mem.Allocator) !@This() {
@@ -142,16 +148,3 @@ pub const FactValue = union(BuiltinFactTypes) {
         return utils.implement_nonconst_func_for_tagged_union(self, "deinit", void, .{allocator});
     }
 };
-
-test "perf- show-fact-sizes" {
-    std.debug.print("FactValue size: {d}\n", .{@sizeOf(FactValue)});
-    std.debug.print("Fact_BADTYPE size: {d}\n", .{@sizeOf(Fact_BADTYPE)});
-    std.debug.print("FactBoolean size: {d}\n", .{@sizeOf(FactBoolean)});
-    std.debug.print("FactInteger size: {d}\n", .{@sizeOf(FactInteger)});
-    std.debug.print("FactFloat size: {d}\n", .{@sizeOf(FactFloat)});
-    std.debug.print("FactTypeRef size: {d}\n", .{@sizeOf(FactTypeRef)});
-    std.debug.print("FactArray size: {d}\n", .{@sizeOf(FactArray)});
-    std.debug.print("FactString size: {d}\n", .{@sizeOf(FactString)});
-    std.debug.print("FactTypeInfo size: {d}\n", .{@sizeOf(FactTypeInfo)});
-    std.debug.print("FactUserEnum size: {d}\n", .{@sizeOf(FactUserEnum)});
-}
