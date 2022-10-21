@@ -3,6 +3,8 @@ const tokenizer = @import("tokenizer.zig");
 const fileHandler = @import("fileHandler.zig");
 const factUtils = @import("facts/factUtils.zig");
 
+
+
 const ArrayList = std.ArrayList;
 const AutoHashMap = std.AutoHashMap;
 const TokenStream = tokenizer.TokenStream;
@@ -1171,7 +1173,7 @@ pub const NodeParser = struct {
                 self.currentTokenWindow.startIndex = self.currentTokenWindow.endIndex;
             }
             if (self.currentTokenWindow.endIndex - self.currentTokenWindow.startIndex > 3 and self.currentTokenWindow.endIndex >= tokenTypes.items.len) {
-                ParserPrint("Unexpected end of file, parsing object from `{s}`", .{tokenData.items[self.currentTokenWindow.startIndex]});
+                ParserPrint("Unexpected end of file, parsing object from `{s}` index: {d}", .{tokenData.items[self.currentTokenWindow.startIndex], self.currentTokenWindow.startIndex});
                 return self.story;
             }
             if (self.currentTokenWindow.endIndex == tokenTypes.items.len) {
@@ -1358,4 +1360,55 @@ test "manual simple storyNode" {
 test "init and deinit" {
     var x = StoryNodes.init(std.testing.allocator);
     defer x.deinit();
+}
+
+
+pub fn explainStory(story: StoryNodes) !void {
+    std.debug.print("\n", .{});
+    for (story.textContent.items) |content, i| {
+        if (i == 0) continue;
+        const node = story.instances.items[i];
+        std.debug.assert(node.id == i);
+        if (story.conditionalBlock.contains(node)) {
+            std.debug.print("{d}> {!s}\n", .{ i, content.asUtf8Native() });
+        } else {
+            if (story.speakerName.get(node)) |speaker| {
+                std.debug.print("{d}> STORY_TEXT> {!s}: {!s} ", .{ i, speaker.asUtf8Native(), content.asUtf8Native() });
+            } else {
+                std.debug.print("{d}> STORY_TEXT> $: {!s} ", .{ i, content.asUtf8Native() });
+            }
+
+            if (story.passThrough.items[node.id]) {
+                std.debug.print("-", .{});
+            }
+
+            if (story.nextNode.get(node)) |next| {
+                std.debug.print("-> {d}", .{next.id});
+            }
+
+            if(story.directiveParams.get(node)) |params|
+            {
+                std.debug.print(" @ {s}", .{try params.asUtf8Native()});
+                //var directive = story.customDirectives.get(node).?;
+                //directive.exec(try params.asUtf8Native());
+            }
+        }
+
+        if (story.choices.get(node)) |choices| {
+            std.debug.print("\n", .{});
+            for (choices.items) |c| {
+                std.debug.print("    -> {d} {d}\n", .{c.id, c.generation});
+            }
+        }
+        std.debug.print("\n", .{});
+    }
+
+    var iter = story.tags.iterator();
+
+    std.debug.print("\nLabels\n", .{});
+    while (iter.next()) |instance| {
+        std.debug.print("key: {s} -> {d}\n", .{ instance.key_ptr.*, instance.value_ptr.*.id });
+    }
+
+    std.debug.print("\n", .{});
 }

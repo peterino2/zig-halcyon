@@ -66,6 +66,29 @@ pub const simple = struct {
         \\@end
     ;
 
+    pub const biggerStory = 
+        \\[start]
+        \\@setSpeaker(0 denver_neutral)
+        \\Denver: damn... what the hell happened here
+        \\Denver: I feel really trapped in this room.
+        \\@end
+        \\
+        \\[salina_talk]
+        \\@setSpeaker(1 salina_annoyed)
+        \\Salina: Well.. someone's up early
+        \\@setSpeaker(0)
+        \\Denver: Yeah.. I guess I am.. How are you doing?
+        \\@setSpeaker(1)
+        \\Salina: Fine.. and No thanks to you,
+        \\Salina: Listen. Whatever the hell you do to yourself in the sanctity of your own room. 
+        \\: That's up to you.
+        \\Salina: But can you PLEASE be quiet about it?
+        \\@setSpeaker(0)
+        \\Denver: (but.. i didn't even do anything)
+        \\@end
+    ;
+
+
 test "directives"
 {
 
@@ -81,65 +104,15 @@ test "directives"
 
     var dw = DirectiveWrapper{};
 
-    var parser = try dut.NodeParser.MakeParser(testString, allocator);
+    var parser = try dut.NodeParser.MakeParser(biggerStory, allocator);
     defer parser.deinit();
 
-    try parser.installDirective("testCustomFunc", &dw, "lol");
+    try parser.installDirective("setSpeaker", &dw, "lol");
 
     var story = try parser.parseAll();
     defer story.deinit();
 
-    try explainStory(story);
-}
-
-pub fn explainStory(story: dut.StoryNodes) !void {
-    std.debug.print("\n", .{});
-    for (story.textContent.items) |content, i| {
-        if (i == 0) continue;
-        const node = story.instances.items[i];
-        std.debug.assert(node.id == i);
-        if (story.conditionalBlock.contains(node)) {
-            std.debug.print("{d}> {!s}\n", .{ i, content.asUtf8Native() });
-        } else {
-            if (story.speakerName.get(node)) |speaker| {
-                std.debug.print("{d}> STORY_TEXT> {!s}: {!s} ", .{ i, speaker.asUtf8Native(), content.asUtf8Native() });
-            } else {
-                std.debug.print("{d}> STORY_TEXT> $: {!s} ", .{ i, content.asUtf8Native() });
-            }
-
-            if (story.passThrough.items[node.id]) {
-                std.debug.print("-", .{});
-            }
-
-            if (story.nextNode.get(node)) |next| {
-                std.debug.print("-> {d}", .{next.id});
-            }
-
-            if(story.directiveParams.get(node)) |params|
-            {
-                std.debug.print(" @ {s}", .{try params.asUtf8Native()});
-                var directive = story.customDirectives.get(node).?;
-                directive.exec(try params.asUtf8Native());
-            }
-        }
-
-        if (story.choices.get(node)) |choices| {
-            std.debug.print("\n", .{});
-            for (choices.items) |c| {
-                std.debug.print("    -> {d} {d}\n", .{c.id, c.generation});
-            }
-        }
-        std.debug.print("\n", .{});
-    }
-
-    var iter = story.tags.iterator();
-
-    std.debug.print("\nLabels\n", .{});
-    while (iter.next()) |instance| {
-        std.debug.print("key: {s} -> {d}\n", .{ instance.key_ptr.*, instance.value_ptr.*.id });
-    }
-
-    std.debug.print("\n", .{});
+    try dut.explainStory(story);
 }
 
 test "simple_1" {
@@ -158,7 +131,7 @@ test "simple_1" {
         };
 
         if (!hasError) {
-            try explainStory(story);
+            try dut.explainStory(story);
         }
         story.deinit();
     }
