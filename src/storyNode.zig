@@ -1,6 +1,7 @@
 const std = @import("std");
 const tokenizer = @import("tokenizer.zig");
 const fileHandler = @import("fileHandler.zig");
+const factUtils = @import("facts/factUtils.zig");
 
 const ArrayList = std.ArrayList;
 const AutoHashMap = std.AutoHashMap;
@@ -83,6 +84,20 @@ pub const NodeString = struct {
         return rv;
     }
 
+    pub fn fromTokenList(toks: []const []const u8, alloc: std.mem.Allocator) !NodeString
+    {
+        var self = try fromUtf8("", alloc);
+        
+        for(toks) |tok|
+        {
+            try self.string.appendSlice(tok);
+        }
+
+        self.locKey = try LocKey.newAutoKey(alloc);
+
+        return self;
+    }
+
     // returns the native text
     pub fn asUtf8Native(self: Self) ![]const u8 {
         return self.string.items;
@@ -101,7 +116,76 @@ pub const NodeData = struct {
     passThrough: bool,
 };
 
+pub const EventListenerInterfaceTable = struct {
+    typeSize: usize,
+    typeAlign: usize,
+
+    onEnteredNode: fn (*anyopaque, Node) void,
+
+    pub fn from(comptime TargetType: type) @This() {
+
+        if (!@hasDecl(TargetType, "onEnteredNode")) {
+            @compileLog("Tried to generate EventListenerInterfaceTable for type ", TargetType, "but it's missing func onEnteredNode");
+            unreachable;
+        }
+
+        const wrappedFuncs = struct {
+            pub fn preDraw(pointer: *anyopaque, node: Node) void {
+                var ptr = @ptrCast(*TargetType, @alignCast(@alignOf(TargetType), pointer));
+                ptr.onEnteredNode(node);
+            }
+        };
+
+        var self = @This(){
+            .typeSize = @sizeOf(TargetType),
+            .typeAlign = @alignOf(TargetType),
+            .onEnteredNode = wrappedFuncs.onEnteredNode,
+        };
+
+        return self;
+    }
+};
+
+pub const EventListenerInterfaceRef = struct {
+    ptr: *anyopaque,
+    vtable: *EventListenerInterfaceTable,
+};
+
+pub const DirectiveImplDelegate = struct {
+    ptr: *anyopaque,
+    func: fn (*anyopaque, [*c]const u8, c_int) callconv(.C) void,
+
+
+    pub fn exec(self: *@This(), params: []const u8) void
+    {
+        self.func(self.ptr, params.ptr, @intCast(c_int, params.len));
+    }
+
+    pub fn from(capture: anytype, comptime func: []const u8) @This()
+    {
+        const TargetType = @TypeOf(capture.*);
+        const Wrapper = struct{
+            pub fn exec(pointer: *anyopaque, paramPtr: [*c]const u8, len: c_int) callconv(.C) void
+            {
+                var ptr = @ptrCast(*TargetType, @alignCast(@alignOf(TargetType), pointer));
+                var slice: []const u8 = undefined;
+                slice.ptr = paramPtr;
+                slice.len = @intCast(usize, len);
+                @field(ptr, func)(slice);
+            }
+        };
+
+        return .{
+            .ptr = capture,
+            .func = Wrapper.exec,
+        };
+    }
+};
+
+pub const DefaultInitSize = 0xfffff;
+
 pub const StoryNodes = struct {
+    allocator: std.mem.Allocator,
     instances: ArrayList(Node),
     textContent: ArrayList(NodeString),
     passThrough: ArrayList(bool),
@@ -109,13 +193,31 @@ pub const StoryNodes = struct {
     nodes: ArrayList(NodeData),
 
     speakerName: AutoHashMap(Node, NodeString),
+
+    // hmm these next 3 types are actually kind of mutually exclusive
     conditionalBlock: AutoHashMap(Node, BranchNode),
     choices: AutoHashMap(Node, ArrayList(Node)),
     nextNode: AutoHashMap(Node, Node),
     explicitLink: AutoHashMap(Node, bool),
+
     tags: std.StringHashMap(Node),
+    hasEvent: std.AutoHashMapUnmanaged(Node, bool) = .{},
+    eventListeners: std.ArrayListUnmanaged(EventListenerInterfaceRef) = .{},
+    directiveParams: std.AutoHashMap(Node, NodeString),
+    customDirectives: std.AutoHashMap(Node, DirectiveImplDelegate),
+
 
     const Self = @This();
+
+    pub fn addStoryNodeCallback(self: *@This(), eventListener: EventListenerInterfaceRef) !void
+    {
+        try self.eventListeners.append(self.allocator, eventListener);
+    }
+
+    pub fn installFunction(self: *@This(),functionName: []const u8, delegate: DirectiveImplDelegate) void
+    {
+        try self.customDirectives.put(functionName, delegate);
+    }
 
     pub fn getNullNode(self: Self) Node {
         return self.instances.items[0];
@@ -125,8 +227,9 @@ pub const StoryNodes = struct {
         // should actually group nextNode, explicitLinks and all future link based data into an enum or struct.
         // that's a pretty important refactor we should do
         var rv = Self{
-            .instances = ArrayList(Node).initCapacity(allocator, 0xffff) catch unreachable,
-            .textContent = ArrayList(NodeString).initCapacity(allocator, 0xffff) catch unreachable,
+            .allocator = allocator,
+            .instances = ArrayList(Node).initCapacity(allocator, DefaultInitSize) catch unreachable,
+            .textContent = ArrayList(NodeString).initCapacity(allocator, DefaultInitSize) catch unreachable,
             .passThrough = ArrayList(bool).init(allocator),
             .speakerName = AutoHashMap(Node, NodeString).init(allocator),
             .choices = AutoHashMap(Node, ArrayList(Node)).init(allocator),
@@ -135,16 +238,24 @@ pub const StoryNodes = struct {
             .conditionalBlock = AutoHashMap(Node, BranchNode).init(allocator),
             .explicitLink = AutoHashMap(Node, bool).init(allocator),
             .nodes = ArrayList(NodeData).init(allocator),
+            .customDirectives = std.AutoHashMap(Node, DirectiveImplDelegate).init(allocator),
+            .directiveParams = AutoHashMap(Node, NodeString).init(allocator),
         };
         var node = rv.newNodeWithContent("@__STORY_END__", allocator) catch unreachable;
         rv.setLabel(node, "@__STORY_END__") catch unreachable;
         return rv;
     }
 
+    pub fn setDirectiveParams(self: *@This(), node: Node, directiveParams: NodeString) !void
+    {
+        try self.directiveParams.put(node, directiveParams);
+    }
+
     pub fn deinit(self: *Self) void {
         self.instances.deinit();
         self.passThrough.deinit();
         self.explicitLink.deinit();
+        self.customDirectives.deinit();
         self.conditionalBlock.deinit();
         {
             var i: usize = 0;
@@ -171,6 +282,16 @@ pub const StoryNodes = struct {
                 i += 1;
             }
             self.choices.deinit();
+        }
+
+        {
+            var iter = self.directiveParams.iterator();
+            var i: usize = 0;
+            while (iter.next()) |instance| {
+                instance.value_ptr.deinit();
+                i += 1;
+            }
+            self.directiveParams.deinit();
         }
 
         self.nextNode.deinit();
@@ -200,6 +321,7 @@ pub const StoryNodes = struct {
         try self.textContent.append(newString);
         try self.instances.append(node);
         try self.passThrough.append(false);
+        
 
         return node;
     }
@@ -606,6 +728,7 @@ pub const ParserWarningOrErrorInfo = struct {
 pub const NodeParser = struct {
     const Self = @This();
 
+    allocator: std.mem.Allocator,
     tokenStream: TokenStream,
     isParsing: bool = true,
     tabLevel: usize = 0,
@@ -621,6 +744,10 @@ pub const NodeParser = struct {
     errors: ArrayList(ParserWarningOrErrorInfo),
     warnings: ArrayList(ParserWarningOrErrorInfo),
     filename: []const u8 = "__halcyon_no_file",
+    directiveList: std.ArrayListUnmanaged(struct {
+        name: []const u8,
+        impl: DirectiveImplDelegate,
+    }) = .{},
 
     pub fn pushError(self: *Self, errorType: ParserWarningOrError, fmt: []const u8, args: anytype) !void {
         _ = args;
@@ -692,16 +819,18 @@ pub const NodeParser = struct {
         }
     }
 
-    fn deinit(self: *Self) void {
+    pub fn deinit(self: *Self) void {
         // we dont release the storyNodes
         self.tokenStream.deinit();
         self.nodeLinkingRules.deinit();
         self.errors.deinit();
         self.warnings.deinit();
+        self.directiveList.deinit(self.allocator);
     }
 
     pub fn MakeParser(source: []const u8, alloc: std.mem.Allocator) !Self {
         var rv = Self{
+            .allocator = alloc,
             .tokenStream = try TokenStream.MakeTokens(source, alloc),
             .story = StoryNodes.init(alloc),
             .nodeLinkingRules = ArrayList(NodeLinkingRules).init(alloc),
@@ -858,6 +987,15 @@ pub const NodeParser = struct {
     pub fn DoParse(source: []const u8, alloc: std.mem.Allocator) !StoryNodes {
         var self = try Self.MakeParser(source, alloc);
         defer self.deinit();
+        return try self.parseAll();
+    }
+
+    pub fn installDirective(self: *@This(), directiveName: []const u8, capture: anytype, comptime func: anytype) !void {
+        try self.directiveList.append(self.allocator, .{.name = directiveName, .impl = DirectiveImplDelegate.from(capture, func)});
+    }
+
+    pub fn parseAll(self: *@This()) !StoryNodes{
+        var alloc = self.allocator;
 
         const tokenTypes = self.tokenStream.token_types;
         const tokenData = self.tokenStream.tokens;
@@ -956,6 +1094,18 @@ pub const NodeParser = struct {
                 ParserPrint("{d}: Generic Directive: {s}\n", .{ nodesCount, dataSlice[0..max] });
                 const node = try self.story.newDirectiveNodeFromUtf8(dataSlice, alloc);
                 try self.story.setTextContentFromSlice(node, "Generic Directive");
+                try self.story.setDirectiveParams(node, try NodeString.fromTokenList(dataSlice[3..max - 1], alloc));
+
+                for(self.directiveList.items) |d|
+                {
+                    ParserPrint("Trying to match directive {s} to {s}\n", .{d.name, dataSlice[1]});
+                    if(std.mem.eql(u8, d.name, dataSlice[1]))
+                    {
+                        try self.story.customDirectives.put(node, d.impl);
+                        break;
+                    }
+                }
+
                 try self.finishCreatingNode(node, self.makeLinkingRules(node));
                 shouldBreak = true;
             }

@@ -57,6 +57,41 @@ pub const simple = struct {
     };
 };
 
+    pub const testString =
+        \\$: Hello! #second comment
+        \\$: Hello back to you.
+        \\: do you like cats or dogs?
+        \\@set(tesvar, 42)
+        \\@testCustomFunc(Extendo my nintendo)
+        \\@end
+    ;
+
+test "directives"
+{
+
+    const allocator = std.testing.allocator;
+    const DirectiveWrapper = struct {
+        name: []const u8 = "wrapper",
+        
+        pub fn lol(self: *@This(), directiveParams: []const u8) void
+        {
+            std.debug.print("\n inst:{s} Delegate called! with params: `{s}`", .{self.name, directiveParams});
+        }
+    };
+
+    var dw = DirectiveWrapper{};
+
+    var parser = try dut.NodeParser.MakeParser(testString, allocator);
+    defer parser.deinit();
+
+    try parser.installDirective("testCustomFunc", &dw, "lol");
+
+    var story = try parser.parseAll();
+    defer story.deinit();
+
+    try explainStory(story);
+}
+
 pub fn explainStory(story: dut.StoryNodes) !void {
     std.debug.print("\n", .{});
     for (story.textContent.items) |content, i| {
@@ -64,12 +99,12 @@ pub fn explainStory(story: dut.StoryNodes) !void {
         const node = story.instances.items[i];
         std.debug.assert(node.id == i);
         if (story.conditionalBlock.contains(node)) {
-            std.debug.print("{d}> {s}\n", .{ i, content.asUtf8Native() });
+            std.debug.print("{d}> {!s}\n", .{ i, content.asUtf8Native() });
         } else {
             if (story.speakerName.get(node)) |speaker| {
-                std.debug.print("{d}> STORY_TEXT> {s}: {s} ", .{ i, speaker.asUtf8Native(), content.asUtf8Native() });
+                std.debug.print("{d}> STORY_TEXT> {!s}: {!s} ", .{ i, speaker.asUtf8Native(), content.asUtf8Native() });
             } else {
-                std.debug.print("{d}> STORY_TEXT> $: {s} ", .{ i, content.asUtf8Native() });
+                std.debug.print("{d}> STORY_TEXT> $: {!s} ", .{ i, content.asUtf8Native() });
             }
 
             if (story.passThrough.items[node.id]) {
@@ -79,12 +114,19 @@ pub fn explainStory(story: dut.StoryNodes) !void {
             if (story.nextNode.get(node)) |next| {
                 std.debug.print("-> {d}", .{next.id});
             }
+
+            if(story.directiveParams.get(node)) |params|
+            {
+                std.debug.print(" @ {s}", .{try params.asUtf8Native()});
+                var directive = story.customDirectives.get(node).?;
+                directive.exec(try params.asUtf8Native());
+            }
         }
 
         if (story.choices.get(node)) |choices| {
             std.debug.print("\n", .{});
             for (choices.items) |c| {
-                std.debug.print("    -> {d}\n", .{c});
+                std.debug.print("    -> {d} {d}\n", .{c.id, c.generation});
             }
         }
         std.debug.print("\n", .{});
