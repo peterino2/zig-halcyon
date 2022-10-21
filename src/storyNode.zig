@@ -112,7 +112,7 @@ pub const StoryNodes = struct {
     conditionalBlock: AutoHashMap(Node, BranchNode),
     choices: AutoHashMap(Node, ArrayList(Node)),
     nextNode: AutoHashMap(Node, Node),
-    explicitLink: AutoHashMap(Node, void),
+    explicitLink: AutoHashMap(Node, bool),
     tags: std.StringHashMap(Node),
 
     const Self = @This();
@@ -133,7 +133,7 @@ pub const StoryNodes = struct {
             .nextNode = AutoHashMap(Node, Node).init(allocator),
             .tags = std.StringHashMap(Node).init(allocator),
             .conditionalBlock = AutoHashMap(Node, BranchNode).init(allocator),
-            .explicitLink = AutoHashMap(Node, void).init(allocator),
+            .explicitLink = AutoHashMap(Node, bool).init(allocator),
             .nodes = ArrayList(NodeData).init(allocator),
         };
         var node = rv.newNodeWithContent("@__STORY_END__", allocator) catch unreachable;
@@ -230,7 +230,7 @@ pub const StoryNodes = struct {
     pub fn setLinkByLabel(self: *Self, id: Node, label: []const u8) !Node {
         var next = self.findNodeByLabel(label) orelse return StoryNodesError.InstancesNotExistError;
         try self.nextNode.put(id, next);
-        try self.explicitLink.put(id, .{});
+        try self.explicitLink.put(id, true);
         return next;
     }
 
@@ -645,7 +645,6 @@ pub const NodeParser = struct {
     }
 
     fn makeLinkingRules(self: *Self, node: Node) NodeLinkingRules {
-        _ = self;
         return NodeLinkingRules{
             .node = node,
             .tabLevel = self.tabLevel,
@@ -658,7 +657,6 @@ pub const NodeParser = struct {
         var rules = self.makeLinkingRules(node);
         rules.typeInfo = .{ .choice = .{} };
         try self.finishCreatingNode(node, rules);
-        _ = alloc;
     }
 
     fn matchFunctionCallGeneric(slice: []const TokenType, data: anytype, functionName: []const u8) bool {
