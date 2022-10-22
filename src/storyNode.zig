@@ -192,8 +192,6 @@ pub const StoryNodes = struct {
     textContent: ArrayList(NodeString),
     passThrough: ArrayList(bool),
 
-    nodes: ArrayList(NodeData),
-
     speakerName: AutoHashMap(Node, NodeString),
 
     // hmm these next 3 types are actually kind of mutually exclusive
@@ -225,6 +223,21 @@ pub const StoryNodes = struct {
         return self.instances.items[0];
     }
 
+    pub fn getSpeakerName(self: @This(), node: Node) ?[]const u8
+    {
+        const speakerString = self.speakerName.get(node);
+        if(speakerString) |s|
+        {
+            return s.asUtf8Native() catch unreachable;
+        }
+        return null;
+    }
+
+    pub fn getStoryUtf8(self: @This(), node: Node) []const u8
+    {
+        return self.textContent.items[node.id].asUtf8Native() catch unreachable;
+    }
+
     pub fn init(allocator: std.mem.Allocator) Self {
         // should actually group nextNode, explicitLinks and all future link based data into an enum or struct.
         // that's a pretty important refactor we should do
@@ -239,7 +252,6 @@ pub const StoryNodes = struct {
             .tags = std.StringHashMap(Node).init(allocator),
             .conditionalBlock = AutoHashMap(Node, BranchNode).init(allocator),
             .explicitLink = AutoHashMap(Node, bool).init(allocator),
-            .nodes = ArrayList(NodeData).init(allocator),
             .customDirectives = std.AutoHashMap(Node, DirectiveImplDelegate).init(allocator),
             .directiveParams = AutoHashMap(Node, NodeString).init(allocator),
         };
@@ -398,18 +410,15 @@ pub const StoryNodes = struct {
     pub fn getStoryText(self: Self, id: usize) ![]const u8 {
         return self.textContent.items[id].asUtf8Native();
     }
-
-    pub fn getSpeakerName(self: Self, id: usize) ![]const u8 {
-        return self.speakerName.items[id].asUtf8Native();
-    }
 };
 
 pub fn parserPanic(message: []const u8) !void {
     std.debug.print("Parser Error!: {s}", .{message});
 }
 
+// low level, just a pointer
 pub const Interactor = struct {
-    story: *const StoryNodes,
+    story: *StoryNodes,
     node: Node,
     isRecording: bool,
     history: ArrayList(Node),
@@ -427,7 +436,17 @@ pub const Interactor = struct {
         std.debug.print("\n", .{});
     }
 
-    pub fn init(story: *const StoryNodes, alloc: std.mem.Allocator) Interactor {
+    pub fn startInteraction(story: *StoryNodes, label: []const u8, alloc: std.mem.Allocator) @This()
+    {
+        return Interactor{
+            .story = story,
+            .node = story.findNodeByLabel(label) orelse unreachable,
+            .history = ArrayList(Node).init(alloc),
+            .isRecording = false,
+        };
+    }
+
+    pub fn init(story: *StoryNodes, alloc: std.mem.Allocator) Interactor {
         return Interactor{
             .story = story,
             .node = story.findNodeByLabel(storyStartLabel) orelse unreachable,
@@ -454,6 +473,7 @@ pub const Interactor = struct {
         return str;
     }
 
+    // low level, progress to next node without side effects
     pub fn next(self: *Self) !void {
         var story = self.story;
         if (story.nextNode.contains(self.node)) {
@@ -465,6 +485,52 @@ pub const Interactor = struct {
         }
     }
 
+    pub fn isFinished(self: Self) bool
+    {
+        return self.node.id == 0;
+    }
+
+    // high level progress interaction but trigger side effects.
+    pub fn proceed(self: *Self) !void 
+    {
+        try self.next();
+        try self.resolve();
+    }
+
+    pub fn resolve(self: *Self) !void
+    {
+        // resolve interactions on current node
+        var story = self.story;
+
+        var shouldProceed: bool = false;
+        var first: bool = true;
+        while(shouldProceed or first)
+        {
+            first = false;
+            shouldProceed = false;
+            // stopping cases: 
+            // we land on the next bit of non-directive content
+            // this was not a directive or a goto
+            const node = self.node;
+            const passThrough = self.story.passThrough.items[node.id];
+
+            // check if this is a goto, proceed if it is
+            if(passThrough)
+            {
+                try self.next();
+                continue;
+            }
+
+            if(story.customDirectives.get(node)) |*directive|
+            {
+                directive.exec(story.directiveParams.get(node).?.asUtf8Native() catch unreachable);
+                try self.next();
+                shouldProceed = true;
+            }
+        }
+    }
+
+    // test function
     pub fn iterateChoicesList(self: *Self, iter: []const usize) !void {
         var currentChoiceIndex: usize = 0;
         var story = self.story;
