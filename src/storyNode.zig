@@ -57,8 +57,8 @@ pub const NodeString = struct {
 
     pub fn initAuto(alloc: std.mem.Allocator) Self {
         return NodeString{
-            .string = try ArrayList(u8).init(alloc),
-            .locKey = LocKey.newAutoKey(alloc),
+            .string = ArrayList(u8).init(alloc),
+            .locKey = try LocKey.newAutoKey(alloc),
         };
     }
 
@@ -88,14 +88,12 @@ pub const NodeString = struct {
 
     pub fn fromTokenList(toks: []const []const u8, alloc: std.mem.Allocator) !NodeString
     {
-        var self = try fromUtf8("", alloc);
+        var self = initAuto(alloc);
         
         for(toks) |tok|
         {
             try self.string.appendSlice(tok);
         }
-
-        self.locKey = try LocKey.newAutoKey(alloc);
 
         return self;
     }
@@ -262,6 +260,7 @@ pub const StoryNodes = struct {
 
     pub fn setDirectiveParams(self: *@This(), node: Node, directiveParams: NodeString) !void
     {
+        std.debug.print("capturing params {any}\n", .{try directiveParams.asUtf8Native()});
         try self.directiveParams.put(node, directiveParams);
     }
 
