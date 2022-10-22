@@ -348,6 +348,8 @@ pub const StoryNodes = struct {
         try self.textContent.append(newString);
         try self.instances.append(node);
         try self.passThrough.append(false);
+        assert(self.textContent.items.len == self.instances.items.len);
+        assert(self.passThrough.items.len == self.instances.items.len);
 
         return node;
     }
@@ -930,6 +932,8 @@ pub const NodeParser = struct {
         self.lastNode = node;
 
         try self.nodeLinkingRules.append(params);
+        assert(self.story.instances.items.len == self.nodeLinkingRules.items.len);
+        assert(self.lastNode.id < self.nodeLinkingRules.items.len);
 
         // handle linking
         if (self.hasLastLabel) {
@@ -963,7 +967,7 @@ pub const NodeParser = struct {
     }
 
     pub fn init(allocator: std.mem.Allocator) @This() {
-        return .{
+        var self = @This(){
             .allocator = allocator,
             .tokenStream = undefined,
             .story = StoryNodes.init(allocator),
@@ -972,6 +976,9 @@ pub const NodeParser = struct {
             .hasLastLabel = false,
             .errors = null,
         };
+        self.nodeLinkingRules.append(self.makeLinkingRules(.{})) catch unreachable;
+
+        return self;
     }
 
     // deprecated: high level old API for instantly intializing with a tokenstream ready to go
@@ -1228,6 +1235,11 @@ pub const NodeParser = struct {
                     //try self.story.setLink(self.lastNode, self.story.instances.items[0]);
 
                     ParserPrint("{d}: end of story\n", .{self.lastNode.id});
+                    if(self.lastNode.id >= self.nodeLinkingRules.items.len)
+                    {
+                        self.pushError("malformed @end Directive pointing to bad id {d}", .{self.lastNode.id});
+                        return ParserError.GeneralParserError;
+                    }
 
                     if (self.nodeLinkingRules.items[self.lastNode.id].tabLevel > self.tabLevel) {
                         const node = try self.story.newNodeWithContent("Goto Node", alloc);
