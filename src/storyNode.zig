@@ -184,7 +184,7 @@ pub const DirectiveImplDelegate = struct {
     }
 };
 
-pub const DefaultInitSize = 0xfffff;
+pub const DefaultInitSize = 0x1ffff;
 
 pub const StoryNodes = struct {
     allocator: std.mem.Allocator,
