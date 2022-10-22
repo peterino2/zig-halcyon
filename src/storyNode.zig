@@ -3,8 +3,6 @@ const tokenizer = @import("tokenizer.zig");
 const fileHandler = @import("fileHandler.zig");
 const factUtils = @import("facts/factUtils.zig");
 
-
-
 const ArrayList = std.ArrayList;
 const AutoHashMap = std.AutoHashMap;
 const TokenStream = tokenizer.TokenStream;
@@ -18,6 +16,12 @@ const ParserPrint = std.debug.print;
 pub const ParserWarningOrError = ParserError || ParserWarning || StoryNodesError;
 pub const StoryNodesError = error{ InstancesNotExistError, GeneralError };
 
+pub const ParserErrorType = enum {
+    TokenzationError,
+    GeneralParserError,
+    StoryContentError,
+};
+
 const ParserError = error{
     GeneralParserError,
     UnexpectedTokenError,
@@ -26,6 +30,30 @@ const ParserError = error{
 
 const ParserWarning = error{
     DuplicateLabelWarning,
+};
+
+pub const ParserErrorContext = struct {
+    allocator: std.mem.Allocator,
+    messages: std.ArrayListUnmanaged(ParserWarningOrErrorInfo) = .{},
+
+    pub fn init(allocator: std.mem.Allocator) @This() {
+        return .{
+            .allocator = allocator,
+        };
+    }
+
+    pub fn pushError(self: *@This(), msg: ParserWarningOrErrorInfo) !void {
+        try self.messages.append(self.allocator, msg);
+    }
+
+    pub fn deinit(self: *@This()) void {
+        for (self.messages.items) |*message| {
+            if (message.msg != null) {
+                self.allocator.free(message.msg.?);
+            }
+        }
+        self.messages.deinit(self.allocator);
+    }
 };
 
 pub const Node = struct {
@@ -86,12 +114,10 @@ pub const NodeString = struct {
         return rv;
     }
 
-    pub fn fromTokenList(toks: []const []const u8, alloc: std.mem.Allocator) !NodeString
-    {
+    pub fn fromTokenList(toks: []const []const u8, alloc: std.mem.Allocator) !NodeString {
         var self = initAuto(alloc);
-        
-        for(toks) |tok|
-        {
+
+        for (toks) |tok| {
             try self.string.appendSlice(tok);
         }
 
@@ -123,7 +149,6 @@ pub const EventListenerInterfaceTable = struct {
     onEnteredNode: fn (*anyopaque, Node) void,
 
     pub fn from(comptime TargetType: type) @This() {
-
         if (!@hasDecl(TargetType, "onEnteredNode")) {
             @compileLog("Tried to generate EventListenerInterfaceTable for type ", TargetType, "but it's missing func onEnteredNode");
             unreachable;
@@ -155,18 +180,14 @@ pub const DirectiveImplDelegate = struct {
     ptr: *anyopaque,
     func: fn (*anyopaque, [*c]const u8, c_int) callconv(.C) void,
 
-
-    pub fn exec(self: *@This(), params: []const u8) void
-    {
+    pub fn exec(self: *@This(), params: []const u8) void {
         self.func(self.ptr, params.ptr, @intCast(c_int, params.len));
     }
 
-    pub fn from(capture: anytype, comptime func: []const u8) @This()
-    {
+    pub fn from(capture: anytype, comptime func: []const u8) @This() {
         const TargetType = @TypeOf(capture.*);
-        const Wrapper = struct{
-            pub fn exec(pointer: *anyopaque, paramPtr: [*c]const u8, len: c_int) callconv(.C) void
-            {
+        const Wrapper = struct {
+            pub fn exec(pointer: *anyopaque, paramPtr: [*c]const u8, len: c_int) callconv(.C) void {
                 var ptr = @ptrCast(*TargetType, @alignCast(@alignOf(TargetType), pointer));
                 var slice: []const u8 = undefined;
                 slice.ptr = paramPtr;
@@ -204,16 +225,13 @@ pub const StoryNodes = struct {
     directiveParams: std.AutoHashMap(Node, NodeString),
     customDirectives: std.AutoHashMap(Node, DirectiveImplDelegate),
 
-
     const Self = @This();
 
-    pub fn addStoryNodeCallback(self: *@This(), eventListener: EventListenerInterfaceRef) !void
-    {
+    pub fn addStoryNodeCallback(self: *@This(), eventListener: EventListenerInterfaceRef) !void {
         try self.eventListeners.append(self.allocator, eventListener);
     }
 
-    pub fn installFunction(self: *@This(),functionName: []const u8, delegate: DirectiveImplDelegate) void
-    {
+    pub fn installFunction(self: *@This(), functionName: []const u8, delegate: DirectiveImplDelegate) void {
         try self.customDirectives.put(functionName, delegate);
     }
 
@@ -221,18 +239,15 @@ pub const StoryNodes = struct {
         return self.instances.items[0];
     }
 
-    pub fn getSpeakerName(self: @This(), node: Node) ?[]const u8
-    {
+    pub fn getSpeakerName(self: @This(), node: Node) ?[]const u8 {
         const speakerString = self.speakerName.get(node);
-        if(speakerString) |s|
-        {
+        if (speakerString) |s| {
             return s.asUtf8Native() catch unreachable;
         }
         return null;
     }
 
-    pub fn getStoryUtf8(self: @This(), node: Node) []const u8
-    {
+    pub fn getStoryUtf8(self: @This(), node: Node) []const u8 {
         return self.textContent.items[node.id].asUtf8Native() catch unreachable;
     }
 
@@ -258,8 +273,7 @@ pub const StoryNodes = struct {
         return rv;
     }
 
-    pub fn setDirectiveParams(self: *@This(), node: Node, directiveParams: NodeString) !void
-    {
+    pub fn setDirectiveParams(self: *@This(), node: Node, directiveParams: NodeString) !void {
         std.debug.print("capturing params {any}\n", .{try directiveParams.asUtf8Native()});
         try self.directiveParams.put(node, directiveParams);
     }
@@ -334,7 +348,6 @@ pub const StoryNodes = struct {
         try self.textContent.append(newString);
         try self.instances.append(node);
         try self.passThrough.append(false);
-        
 
         return node;
     }
@@ -435,8 +448,7 @@ pub const Interactor = struct {
         std.debug.print("\n", .{});
     }
 
-    pub fn startInteraction(story: *StoryNodes, label: []const u8, alloc: std.mem.Allocator) @This()
-    {
+    pub fn startInteraction(story: *StoryNodes, label: []const u8, alloc: std.mem.Allocator) @This() {
         return Interactor{
             .story = story,
             .node = story.findNodeByLabel(label) orelse unreachable,
@@ -472,13 +484,10 @@ pub const Interactor = struct {
         return str;
     }
 
-    pub fn chooseAndProgress(self: *@This(), choice: usize) void
-    {
+    pub fn chooseAndProgress(self: *@This(), choice: usize) void {
         var maybeChoices = self.story.choices.get(self.node);
-        if(maybeChoices) |choices|
-        {
-            if(choice < choices.items.len)
-            {
+        if (maybeChoices) |choices| {
+            if (choice < choices.items.len) {
                 self.node = choices.items[choice];
                 self.resolve() catch unreachable;
 
@@ -501,52 +510,43 @@ pub const Interactor = struct {
         }
     }
 
-    pub fn isFinished(self: Self) bool
-    {
+    pub fn isFinished(self: Self) bool {
         return self.node.id == 0;
     }
 
     // high level progress interaction but trigger side effects.
-    pub fn proceed(self: *Self) !void 
-    {
+    pub fn proceed(self: *Self) !void {
         var choices = self.story.choices.get(self.node);
-        if(choices != null) 
-        {
+        if (choices != null) {
             return;
-        }
-        else 
-        {
+        } else {
             try self.next();
             try self.resolve();
         }
     }
 
-    pub fn resolve(self: *Self) !void
-    {
+    pub fn resolve(self: *Self) !void {
         // resolve interactions on current node
         var story = self.story;
 
         var shouldProceed: bool = false;
         var first: bool = true;
-        while(shouldProceed or first)
-        {
+        while (shouldProceed or first) {
             first = false;
             shouldProceed = false;
-            // stopping cases: 
+            // stopping cases:
             // we land on the next bit of non-directive content
             // this was not a directive or a goto
             const node = self.node;
             const passThrough = self.story.passThrough.items[node.id];
 
             // check if this is a goto, proceed if it is
-            if(passThrough)
-            {
+            if (passThrough) {
                 try self.next();
                 continue;
             }
 
-            if(story.customDirectives.get(node)) |*directive|
-            {
+            if (story.customDirectives.get(node)) |*directive| {
                 directive.exec(story.directiveParams.get(node).?.asUtf8Native() catch unreachable);
                 try self.next();
                 shouldProceed = true;
@@ -811,10 +811,59 @@ const NodeLinkingRules = struct {
 };
 
 pub const ParserWarningOrErrorInfo = struct {
-    errorUnion: ParserWarningOrError,
-    tokenWindow: TokenWindow,
-    fileName: []const u8,
-    lineNumber: usize,
+    errorType: ParserErrorType,
+    tokenWindow: ?TokenWindow = null, // only valid for token errors
+    fileName: []const u8 = "root", //f
+    lineNumber: ?usize = null, // if applicable
+    msg: ?[]const u8 = null, //
+    sourceCharWindow: ?struct {
+        start: usize,
+        end: usize,
+    } = null, // only valid for tokenization errors
+
+    pub fn allocPrettyPrint(self: @This(), allocator: std.mem.Allocator, story_src: ?[]const u8) []const u8 {
+        var header: []u8 = "";
+        var msg: []u8 = "";
+
+        defer allocator.free(header);
+        defer allocator.free(msg);
+        switch (self.errorType) {
+            .TokenzationError => {
+                header = std.fmt.allocPrint(
+                    allocator,
+                    "ERROR: {s}: Line:{d}>",
+                    .{ self.fileName, self.lineNumber.? },
+                ) catch unreachable;
+                const s = self.sourceCharWindow.?;
+                if (story_src) |src| {
+                    msg = std.fmt.allocPrint(
+                        allocator,
+                        "tok: `{s}`\n  {s}",
+                        .{ src[s.start..s.end], self.msg.? },
+                    ) catch unreachable;
+                } else {
+                    msg = std.fmt.allocPrint(allocator, "msg:\n  {s}", .{self.msg.?}) catch unreachable;
+                }
+            },
+            .GeneralParserError => {
+                header = std.fmt.allocPrint(
+                    allocator,
+                    "ERROR: {s}: Line:{d}>",
+                    .{ self.fileName, self.lineNumber.? },
+                ) catch unreachable;
+                msg = std.fmt.allocPrint(
+                    allocator,
+                    "{s}",
+                    .{ self.msg.? },
+                ) catch unreachable;
+            },
+            .StoryContentError => {
+                header = std.fmt.allocPrint(allocator, " ", .{}) catch unreachable;
+                msg = std.fmt.allocPrint(allocator, " ", .{}) catch unreachable;
+            },
+        }
+        return std.fmt.allocPrint(allocator, "{s}\n{s}", .{header, msg}) catch unreachable;
+    }
 };
 
 pub const NodeParser = struct {
@@ -833,35 +882,13 @@ pub const NodeParser = struct {
     hasLastLabel: bool = false,
     isNewLining: bool = true,
     nodeLinkingRules: ArrayList(NodeLinkingRules),
-    errors: ArrayList(ParserWarningOrErrorInfo),
-    warnings: ArrayList(ParserWarningOrErrorInfo),
+    errors: ?*ParserErrorContext,
     filename: []const u8 = "__halcyon_no_file",
+    source: []const u8 = "",
     directiveList: std.ArrayListUnmanaged(struct {
         name: []const u8,
         impl: DirectiveImplDelegate,
     }) = .{},
-
-    pub fn pushError(self: *Self, errorType: ParserWarningOrError, fmt: []const u8, args: anytype) !void {
-        _ = args;
-        _ = fmt;
-        try self.errors.append(.{
-            .errorUnion = errorType,
-            .tokenWindow = self.currentTokenWindow,
-            .fileName = self.filename,
-            .lineNumber = self.lineNumber,
-        });
-    }
-
-    pub fn pushWarning(self: *Self, errorType: ParserWarningOrError, fmt: []const u8, args: anytype) !void {
-        _ = args;
-        _ = fmt;
-        try self.warnings.append(.{
-            .errorUnion = errorType,
-            .tokenWindow = self.currentTokenWindow,
-            .fileName = self.filename,
-            .lineNumber = self.lineNumber,
-        });
-    }
 
     fn makeLinkingRules(self: *Self, node: Node) NodeLinkingRules {
         return NodeLinkingRules{
@@ -915,11 +942,39 @@ pub const NodeParser = struct {
         // we dont release the storyNodes
         self.tokenStream.deinit();
         self.nodeLinkingRules.deinit();
-        self.errors.deinit();
-        self.warnings.deinit();
         self.directiveList.deinit(self.allocator);
+        if(self.errors != null)
+        {
+            self.errors.?.deinit();
+        }
     }
 
+    pub fn loadSource(self: *@This(), source: []const u8, filename: ?[]const u8) !void {
+        if(filename)|f|
+        {
+            self.filename = f;
+        }
+        self.source = source;
+
+        self.tokenStream = TokenStream.init(self.allocator);
+        self.tokenStream.errorCtx = self.errors;
+        self.tokenStream.setTokenizationSources(self.filename, source);
+        try self.tokenStream.doTokenize();
+    }
+
+    pub fn init(allocator: std.mem.Allocator) @This() {
+        return .{
+            .allocator = allocator,
+            .tokenStream = undefined,
+            .story = StoryNodes.init(allocator),
+            .nodeLinkingRules = ArrayList(NodeLinkingRules).init(allocator),
+            .lastLabel = "",
+            .hasLastLabel = false,
+            .errors = null,
+        };
+    }
+
+    // deprecated: high level old API for instantly intializing with a tokenstream ready to go
     pub fn MakeParser(source: []const u8, alloc: std.mem.Allocator) !Self {
         var rv = Self{
             .allocator = alloc,
@@ -928,8 +983,7 @@ pub const NodeParser = struct {
             .nodeLinkingRules = ArrayList(NodeLinkingRules).init(alloc),
             .lastLabel = "",
             .hasLastLabel = false,
-            .errors = ArrayList(ParserWarningOrErrorInfo).init(alloc),
-            .warnings = ArrayList(ParserWarningOrErrorInfo).init(alloc),
+            .errors = null,
         };
 
         try rv.nodeLinkingRules.append(rv.makeLinkingRules(.{}));
@@ -1083,10 +1137,39 @@ pub const NodeParser = struct {
     }
 
     pub fn installDirective(self: *@This(), directiveName: []const u8, capture: anytype, comptime func: anytype) !void {
-        try self.directiveList.append(self.allocator, .{.name = directiveName, .impl = DirectiveImplDelegate.from(capture, func)});
+        try self.directiveList.append(self.allocator, .{ .name = directiveName, .impl = DirectiveImplDelegate.from(capture, func) });
     }
 
-    pub fn parseAll(self: *@This()) !StoryNodes{
+    pub fn pushError(self: *@This(), comptime fmt: []const u8, args: anytype) void {
+        var info = ParserWarningOrErrorInfo {
+            .errorType = .GeneralParserError,
+            .fileName = self.filename,
+            .lineNumber = self.lineNumber,
+            .msg = null,
+        };
+
+        if(self.errors) |ctx|
+        {
+            info.msg = std.fmt.allocPrint(ctx.allocator, "General Parser Error: " ++ fmt, args) catch unreachable;
+            ctx.pushError(info) catch unreachable;
+        }
+        else 
+        {
+            std.debug.print("\n", .{});
+            info.msg = std.fmt.allocPrint(self.allocator, "General Parser Error: " ++ fmt, args) catch unreachable;
+        }
+
+        var s = info.allocPrettyPrint(self.allocator, self.source);
+        defer self.allocator.free(s);
+        std.debug.print("\nerror info >>>\n{s}\n", .{s});
+
+        if(self.errors == null)
+        {
+            self.allocator.free(info.msg.?);
+        }
+    }
+
+    pub fn parseAll(self: *@This()) !StoryNodes {
         var alloc = self.allocator;
 
         const tokenTypes = self.tokenStream.token_types;
@@ -1119,6 +1202,12 @@ pub const NodeParser = struct {
             if (!shouldBreak and tokMatchGoto(tokenTypeSlice, dataSlice)) {
                 ParserPrint("{d}: Goto -> {s}\n", .{ self.lastNode.id, dataSlice[dataSlice.len - 1] });
                 if (self.lastNode.id > 0) {
+                    if(self.lastNode.id >= self.nodeLinkingRules.items.len)
+                    {
+                        self.pushError("Really bad goto generation", .{});
+                        return ParserError.GeneralParserError;
+                    }
+
                     if (self.nodeLinkingRules.items[self.lastNode.id].tabLevel > self.tabLevel) {
                         const node = try self.story.newNodeWithContent("Goto Node", alloc);
                         self.story.passThrough.items[node.id] = true;
@@ -1129,6 +1218,7 @@ pub const NodeParser = struct {
                         self.nodeLinkingRules.items[self.lastNode.id].label = dataSlice[dataSlice.len - 1];
                     }
                 } else {
+                    self.pushError("Malformed goto", .{});
                     return ParserError.GeneralParserError;
                 }
                 shouldBreak = true;
@@ -1149,6 +1239,7 @@ pub const NodeParser = struct {
                         self.nodeLinkingRules.items[self.lastNode.id].label = "@__STORY_END__";
                     }
                 } else {
+                    self.pushError("malformed @end Directive", .{});
                     return ParserError.GeneralParserError;
                 }
 
@@ -1186,13 +1277,11 @@ pub const NodeParser = struct {
                 ParserPrint("{d}: Generic Directive: {s}\n", .{ nodesCount, dataSlice[0..max] });
                 const node = try self.story.newDirectiveNodeFromUtf8(dataSlice, alloc);
                 try self.story.setTextContentFromSlice(node, "Generic Directive");
-                try self.story.setDirectiveParams(node, try NodeString.fromTokenList(dataSlice[3..max - 1], alloc));
+                try self.story.setDirectiveParams(node, try NodeString.fromTokenList(dataSlice[3 .. max - 1], alloc));
 
-                for(self.directiveList.items) |d|
-                {
-                    ParserPrint("Trying to match directive {s} to {s}\n", .{d.name, dataSlice[1]});
-                    if(std.mem.eql(u8, d.name, dataSlice[1]))
-                    {
+                for (self.directiveList.items) |d| {
+                    ParserPrint("Trying to match directive {s} to {s}\n", .{ d.name, dataSlice[1] });
+                    if (std.mem.eql(u8, d.name, dataSlice[1])) {
                         try self.story.customDirectives.put(node, d.impl);
                         break;
                     }
@@ -1224,7 +1313,7 @@ pub const NodeParser = struct {
             if (!shouldBreak and tokMatchLabelDeclare(tokenTypeSlice)) {
                 ParserPrint("> Label declare {s}\n", .{dataSlice[1]});
                 if (self.story.tags.contains(dataSlice[1])) {
-                    try self.pushWarning(ParserWarning.DuplicateLabelWarning, "duplicate label: {s}", .{dataSlice[1]});
+                    self.pushError("Duplicate label: {s}", .{dataSlice[1]});
                 }
                 self.hasLastLabel = true;
                 self.lastLabel = dataSlice[1];
@@ -1263,7 +1352,7 @@ pub const NodeParser = struct {
                 self.currentTokenWindow.startIndex = self.currentTokenWindow.endIndex;
             }
             if (self.currentTokenWindow.endIndex - self.currentTokenWindow.startIndex > 3 and self.currentTokenWindow.endIndex >= tokenTypes.items.len) {
-                ParserPrint("Unexpected end of file, parsing object from `{s}` index: {d}", .{tokenData.items[self.currentTokenWindow.startIndex], self.currentTokenWindow.startIndex});
+                ParserPrint("Unexpected end of file, parsing object from `{s}` index: {d}", .{ tokenData.items[self.currentTokenWindow.startIndex], self.currentTokenWindow.startIndex });
                 return self.story;
             }
             if (self.currentTokenWindow.endIndex == tokenTypes.items.len) {
@@ -1403,8 +1492,8 @@ test "parse simplest with no-conditionals" {
     std.debug.print("\n", .{});
 }
 
-fn testChoicesList(story: StoryNodes, choicesList: []const usize, alloc: std.mem.Allocator) !void {
-    var interactor = Interactor.init(&story, alloc);
+fn testChoicesList(story: *StoryNodes, choicesList: []const usize, alloc: std.mem.Allocator) !void {
+    var interactor = Interactor.init(story, alloc);
     defer interactor.deinit();
     interactor.startRecording();
     try interactor.iterateChoicesList(choicesList); // path 1
@@ -1417,15 +1506,15 @@ test "parsed simple storyNode" {
     defer story.deinit();
     {
         std.debug.print("\nPath 1 test -----\n", .{});
-        try testChoicesList(story, &.{0}, alloc);
+        try testChoicesList(&story, &.{0}, alloc);
     }
     {
         std.debug.print("\nPath 2 test -----\n", .{});
-        try testChoicesList(story, &.{1}, alloc);
+        try testChoicesList(&story, &.{1}, alloc);
     }
     {
         std.debug.print("\nPath 3 test -----\n", .{});
-        try testChoicesList(story, &.{ 2, 2, 1 }, alloc);
+        try testChoicesList(&story, &.{ 2, 2, 1 }, alloc);
     }
 }
 
@@ -1435,15 +1524,15 @@ test "manual simple storyNode" {
     defer story.deinit();
     {
         std.debug.print("\nPath 1 test -----\n", .{});
-        try testChoicesList(story, &.{0}, alloc);
+        try testChoicesList(&story, &.{0}, alloc);
     }
     {
         std.debug.print("\nPath 2 test -----\n", .{});
-        try testChoicesList(story, &.{1}, alloc);
+        try testChoicesList(&story, &.{1}, alloc);
     }
     {
         std.debug.print("\nPath 3 test -----\n", .{});
-        try testChoicesList(story, &.{ 2, 2, 1 }, alloc);
+        try testChoicesList(&story, &.{ 2, 2, 1 }, alloc);
     }
 }
 
@@ -1452,6 +1541,26 @@ test "init and deinit" {
     defer x.deinit();
 }
 
+const parser_error_case = 
+    \\[hello]
+    \\[hello]
+    \\$: Hello! #second comment
+    \\[question]
+    \\$: I'm going to ask you a question.
+    \\        @goto bad jump
+    \\@end
+;
+
+test "parser-error"
+{
+    const alloc = std.testing.allocator;
+    var parser = NodeParser.init(alloc);
+    defer parser.deinit();
+    errdefer parser.story.deinit();
+    try parser.loadSource(parser_error_case, null);
+    var story = parser.parseAll() catch parser.story;
+    defer story.deinit();
+}
 
 pub fn explainStory(story: StoryNodes) !void {
     std.debug.print("\n", .{});
@@ -1476,8 +1585,7 @@ pub fn explainStory(story: StoryNodes) !void {
                 std.debug.print("-> {d}", .{next.id});
             }
 
-            if(story.directiveParams.get(node)) |params|
-            {
+            if (story.directiveParams.get(node)) |params| {
                 std.debug.print(" @ {s}", .{try params.asUtf8Native()});
                 //var directive = story.customDirectives.get(node).?;
                 //directive.exec(try params.asUtf8Native());
@@ -1487,7 +1595,7 @@ pub fn explainStory(story: StoryNodes) !void {
         if (story.choices.get(node)) |choices| {
             std.debug.print("\n", .{});
             for (choices.items) |c| {
-                std.debug.print("    -> {d} {d}\n", .{c.id, c.generation});
+                std.debug.print("    -> {d} {d}\n", .{ c.id, c.generation });
             }
         }
         std.debug.print("\n", .{});

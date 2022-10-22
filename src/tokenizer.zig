@@ -1,6 +1,8 @@
 const std = @import("std");
 const ArrayList = std.ArrayList;
 const AutoHashMap = std.AutoHashMap;
+const halc = @import("storyNode.zig");
+const ParserErrorContext = halc.ParserErrorContext;
 
 pub const simplest_v1 =
     \\[hello]
@@ -13,6 +15,23 @@ pub const simplest_v1 =
     \\    > Dogs:
     \\        $: Nice!
     \\        Lee: Yeah man they're delicious
+    \\    > (Chun-Li) Both:
+    \\        $: Don't be stupid you have to pick one.
+    \\        @goto question
+    \\@end
+;
+
+pub const simplest_with_error =
+    \\[hello]
+    \\$: Hello! #second comment
+    \\[question]
+    \\$: I'm going to ask you a question.
+    \\: do you like cats or dogs?
+    \\    > Cats:
+    \\        $: Hmm I guess we can't be friends
+    \\    > Dogs:
+    \\        $: Nice!
+    \\        Lee:::: Yeah man they're delicious
     \\    > (Chun-Li) Both:
     \\        $: Don't be stupid you have to pick one.
     \\        @goto question
@@ -265,12 +284,34 @@ pub const TokenStream = struct {
     source: []const u8,
     latestChar: u8 = 0,
     mode: ParserMode = ParserMode.default,
+    fileName: []const u8 = "no_file",
+    errorCtx: ?*ParserErrorContext = null,
+    lineNumber: usize = 1,
+    allocator: std.mem.Allocator,
 
     const Self = @This();
 
     pub fn deinit(self: *Self) void {
         self.tokens.deinit();
         self.token_types.deinit();
+    }
+
+    pub fn init(allocator: std.mem.Allocator) @This()
+    {
+        var self = Self{
+            .tokens = ArrayList([]const u8).init(allocator),
+            .token_types = ArrayList(TokenType).init(allocator),
+            .source = undefined,
+            .allocator = allocator,
+        };
+
+        return self;
+    }
+
+    pub fn setTokenizationSources(self: *@This(), fileName:[]const u8, source: []const u8 ) void
+    {
+        self.fileName = fileName;
+        self.source = source;
     }
 
     pub fn MakeTokens(targetData: []const u8, allocator: std.mem.Allocator) !Self {
@@ -280,7 +321,13 @@ pub const TokenStream = struct {
             .tokens = ArrayList([]const u8).init(allocator),
             .token_types = ArrayList(TokenType).init(allocator),
             .source = targetData,
+            .allocator = allocator,
         };
+        try self.doTokenize();
+        return self;
+    }
+
+    pub fn doTokenize(self: *@This()) !void {
 
         var collectingIdentifier = false;
 
@@ -360,7 +407,7 @@ pub const TokenStream = struct {
                     }
                     if (!shouldBreak) {
                         if (!collectingIdentifier) {
-                            std.debug.print("\nUnexpected token `{c}`\n>>>>>\n", .{self.slice});
+                            try self.pushError("\nUnexpected token `{c}`\n>>>>>\n", .{self.slice});
                             self.startIndex += 1;
                             self.length = 0;
                         }
@@ -374,6 +421,12 @@ pub const TokenStream = struct {
                                 finalSlice = self.source[self.startIndex..];
                             } else {
                                 finalSlice = self.slice[0 .. self.slice.len - 1];
+                            }
+
+                            if(finalSlice.len == 0)
+                            {
+                                try self.pushError("Really messed up slice, scope was probably closed too early {any}", .{finalSlice});
+                                return;
                             }
 
                             // strip leading and trailing whitespaces.
@@ -405,9 +458,10 @@ pub const TokenStream = struct {
                         } else {
                             try self.tokens.append("\n");
                             try self.token_types.append(TokenType.NEWLINE);
+                            self.lineNumber += 1;
                         }
                         if (std.mem.endsWith(u8, self.slice, "\r")) {
-                            // std.debug.assert(false, "File is encoded with carraige return. The standard is linefeed (\n) only as the linebreak");
+                            try self.pushError("File is encoded with carraige return. Use the linefeed (\n) only as the linebreak.", .{});
                         }
                     }
                 },
@@ -439,8 +493,44 @@ pub const TokenStream = struct {
         }
 
         std.debug.assert(self.tokens.items.len == self.token_types.items.len);
+    }
 
-        return self;
+    pub fn pushError(self: *@This(),
+        comptime fmt: []const u8, 
+        args: anytype,
+    ) !void
+    {
+        std.debug.print(fmt, args);
+        var info = halc.ParserWarningOrErrorInfo {
+            .errorType = .TokenzationError,
+            .fileName = self.fileName,
+            .lineNumber = self.lineNumber,
+            .sourceCharWindow = .{
+                .start = self.startIndex,
+                .end = self.length,
+            },
+            .msg = null,
+        };
+
+        if(self.errorCtx) |ctx|
+        {
+            info.msg = try std.fmt.allocPrint(ctx.allocator, fmt, args);
+            try ctx.pushError(info);
+        }
+        else 
+        {
+            std.debug.print("\n", .{});
+            info.msg = try std.fmt.allocPrint(self.allocator, fmt, args);
+        }
+
+        var s = info.allocPrettyPrint(self.allocator, self.source);
+        defer self.allocator.free(s);
+        std.debug.print("\ninfo >>>\n{s}\n", .{s});
+
+        if(self.errorCtx == null)
+        {
+            self.allocator.free(info.msg.?);
+        }
     }
 
     pub fn test_display(self: Self) void {
@@ -457,4 +547,24 @@ test "Tokenizing test" {
     defer stream.deinit();
 
     // skipping the ast stage will make things easier but could possibly make things more difficult later..
+}
+
+test "error-context" {
+    var allocator = std.testing.allocator;
+    var ctx = halc.ParserErrorContext.init(allocator);
+    defer ctx.deinit();
+
+    var stream = TokenStream.init(allocator);
+    defer stream.deinit();
+
+    stream.setTokenizationSources("testing", simplest_with_error);
+    stream.errorCtx = &ctx;
+    try stream.doTokenize();
+
+    for(ctx.messages.items) |msg|
+    {
+        var s = msg.allocPrettyPrint(allocator, simplest_with_error);
+        defer allocator.free(s);
+        std.debug.print("{s}\n",.{s});
+    }
 }
