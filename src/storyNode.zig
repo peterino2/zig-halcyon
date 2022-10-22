@@ -473,6 +473,23 @@ pub const Interactor = struct {
         return str;
     }
 
+    pub fn chooseAndProgress(self: *@This(), choice: usize) void
+    {
+        var maybeChoices = self.story.choices.get(self.node);
+        if(maybeChoices) |choices|
+        {
+            if(choice < choices.items.len)
+            {
+                self.node = choices.items[choice];
+                self.resolve() catch unreachable;
+
+                // move to the next node
+                self.next() catch unreachable;
+                self.resolve() catch unreachable;
+            }
+        }
+    }
+
     // low level, progress to next node without side effects
     pub fn next(self: *Self) !void {
         var story = self.story;
@@ -493,8 +510,16 @@ pub const Interactor = struct {
     // high level progress interaction but trigger side effects.
     pub fn proceed(self: *Self) !void 
     {
-        try self.next();
-        try self.resolve();
+        var choices = self.story.choices.get(self.node);
+        if(choices != null) 
+        {
+            return;
+        }
+        else 
+        {
+            try self.next();
+            try self.resolve();
+        }
     }
 
     pub fn resolve(self: *Self) !void
