@@ -11,7 +11,13 @@ const TokenType = tokenizer.TokenStream.TokenType;
 pub const storyStartLabel = "@__STORY_START__";
 pub const storyEndLabel = "@__STORY_END__";
 const assert = std.debug.assert;
-const ParserPrint = std.debug.print;
+const ParserPrint = nullPrint;
+
+//const ParserPrint = std.debug.print;
+fn nullPrint(comptime _: []const u8, _ : anytype) void 
+{
+
+}
 
 pub const ParserWarningOrError = ParserError || ParserWarning || StoryNodesError;
 pub const StoryNodesError = error{ InstancesNotExistError, GeneralError };
@@ -274,7 +280,7 @@ pub const StoryNodes = struct {
     }
 
     pub fn setDirectiveParams(self: *@This(), node: Node, directiveParams: NodeString) !void {
-        std.debug.print("capturing params {any}\n", .{try directiveParams.asUtf8Native()});
+        ParserPrint("capturing params {any}\n", .{try directiveParams.asUtf8Native()});
         try self.directiveParams.put(node, directiveParams);
     }
 
@@ -1042,7 +1048,7 @@ pub const NodeParser = struct {
                 }
 
                 if (rule.label) |label| {
-                    std.debug.print("goto from {any} -> {s}\n", .{ rule.node, label });
+                    ParserPrint("goto from {any} -> {s}\n", .{ rule.node, label });
                     _ = try self.story.setLinkByLabel(rule.node, label);
                 } else if (rule.explicit_goto) |goto| {
                     _ = try self.story.setLink(rule.node, goto);
