@@ -194,6 +194,11 @@ pub const DirectiveImplDelegate = struct {
         const TargetType = @TypeOf(capture.*);
         const Wrapper = struct {
             pub fn exec(pointer: *anyopaque, paramPtr: [*c]const u8, len: c_int) callconv(.C) void {
+                if(paramPtr == null)
+                {
+                    std.debug.print("bad pointer capture we aint gonna do anything", .{});
+                    return;
+                }
                 var ptr = @ptrCast(*TargetType, @alignCast(@alignOf(TargetType), pointer));
                 var slice: []const u8 = undefined;
                 slice.ptr = paramPtr;
@@ -442,6 +447,7 @@ pub const Interactor = struct {
     node: Node,
     isRecording: bool,
     history: ArrayList(Node),
+    retryNode: bool = false,
 
     const Self = @This();
 
@@ -556,9 +562,13 @@ pub const Interactor = struct {
 
             if (story.customDirectives.get(node)) |*directive| {
                 directive.exec(story.directiveParams.get(node).?.asUtf8Native() catch unreachable);
-                try self.next();
+                if(!self.retryNode)
+                {
+                    try self.next();
+                }
                 shouldProceed = true;
             }
+            self.retryNode = false;
         }
     }
 

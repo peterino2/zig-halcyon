@@ -207,6 +207,7 @@ pub const TokenStream = struct {
         "\t",
         "!",
         "=",
+        "/",
         "<",
         "{",
         "}",
@@ -251,6 +252,7 @@ pub const TokenStream = struct {
         TAB,
         EXCLAMATION,
         EQUALS,
+        SLASH,
         L_ANGLE,
         L_BRACE,
         R_BRACE,
@@ -334,6 +336,11 @@ pub const TokenStream = struct {
 
         while (self.isTokenizing) {
             self.slice = self.source[self.startIndex .. self.startIndex + self.length];
+            if(self.slice.len <= 0)
+            {
+                try self.pushError("TODO missing error", .{});
+                return error.TokenzationError;
+            }
             self.latestChar = self.slice[self.slice.len - 1];
 
             var shouldBreak = false;
@@ -544,7 +551,7 @@ pub const TokenStream = struct {
 
 test "Tokenizing test" {
     var stream = try TokenStream.MakeTokens(easySampleData, std.testing.allocator);
-    // stream.test_display();
+    stream.test_display();
     defer stream.deinit();
 
     // skipping the ast stage will make things easier but could possibly make things more difficult later..
