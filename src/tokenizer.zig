@@ -203,7 +203,6 @@ pub const TokenStream = struct {
         "$",
         " ",
         "\n",
-        "\r",
         "\t",
         "!",
         "=",
@@ -221,15 +220,15 @@ pub const TokenStream = struct {
     };
 
     const LeaveTextModeTokens: []const []const u8 = &.{
+        "\r\n", // 1 = r_square_brack
         "\n",
-        "\n\r", // 1 = r_square_brack
         "#",
         ":",
     };
 
     const LeaveCommentModeTokens: []const []const u8 = &.{
         "\n",
-        "\n\r", // 1 = r_square_brack
+        "\r\n", // 1 = r_square_brack
     };
 
     pub const TokenType = enum {
@@ -248,7 +247,6 @@ pub const TokenStream = struct {
         SPEAKERSIGN,
         SPACE,
         NEWLINE,
-        CARRIAGE_RETURN,
         TAB,
         EXCLAMATION,
         EQUALS,
@@ -415,9 +413,17 @@ pub const TokenStream = struct {
                     }
                     if (!shouldBreak) {
                         if (!collectingIdentifier) {
-                            try self.pushError("\nUnexpected token `{c}`\n>>>>>\n", .{self.slice});
-                            self.startIndex += 1;
-                            self.length = 0;
+                            if(std.mem.endsWith(u8, self.slice, "\r\n") or (self.slice[ self.slice.len - 1] == '\r'))
+                            {
+                                self.startIndex += 1;
+                                self.length = 0;
+                            }
+                            else 
+                            {
+                                try self.pushError("\nUnexpected token `{c}` ({any})\n>>>>>\n", .{self.slice, self.slice});
+                                self.startIndex += 1;
+                                self.length = 0;
+                            }
                         }
                     }
                 },
@@ -444,7 +450,7 @@ pub const TokenStream = struct {
                             }
 
                             var finalSliceEndIndex: usize = finalSlice.len - 1;
-                            while (finalSlice[finalSliceEndIndex] == ' ' and finalSliceEndIndex > 0) {
+                            while ((finalSlice[finalSliceEndIndex] == ' ' or finalSlice[finalSliceEndIndex] == '\n' or finalSlice[finalSliceEndIndex] == '\r') and finalSliceEndIndex > 0) {
                                 finalSliceEndIndex -= 1;
                             }
 
@@ -544,7 +550,7 @@ pub const TokenStream = struct {
     pub fn test_display(self: Self) void {
         std.debug.print("tokens added: {d}\n", .{self.tokens.items.len});
         for (self.tokens.items) |value, i| {
-            std.debug.print("{d}: `{s}` {s}\n", .{ i, value, @tagName(self.token_types.items[i]) });
+            std.debug.print("{d}: `{s}` ({any}) {s}\n", .{ i, value, value, @tagName(self.token_types.items[i]) });
         }
     }
 };
