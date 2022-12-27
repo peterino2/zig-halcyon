@@ -268,7 +268,6 @@ pub const TokenStream = struct {
         COMMENT,
     };
 
-
     const ParserMode = enum {
         default, // parses labels and one-offs
         text,
@@ -297,8 +296,7 @@ pub const TokenStream = struct {
         self.token_types.deinit();
     }
 
-    pub fn init(allocator: std.mem.Allocator) @This()
-    {
+    pub fn init(allocator: std.mem.Allocator) @This() {
         var self = Self{
             .tokens = ArrayList([]const u8).init(allocator),
             .token_types = ArrayList(TokenType).init(allocator),
@@ -309,8 +307,7 @@ pub const TokenStream = struct {
         return self;
     }
 
-    pub fn setTokenizationSources(self: *@This(), fileName:[]const u8, source: []const u8 ) void
-    {
+    pub fn setTokenizationSources(self: *@This(), fileName: []const u8, source: []const u8) void {
         self.fileName = fileName;
         self.source = source;
     }
@@ -329,13 +326,11 @@ pub const TokenStream = struct {
     }
 
     pub fn doTokenize(self: *@This()) !void {
-
         var collectingIdentifier = false;
 
         while (self.isTokenizing) {
             self.slice = self.source[self.startIndex .. self.startIndex + self.length];
-            if(self.slice.len <= 0)
-            {
+            if (self.slice.len <= 0) {
                 try self.pushError("TODO missing error", .{});
                 return error.TokenzationError;
             }
@@ -345,7 +340,7 @@ pub const TokenStream = struct {
             switch (self.mode) {
                 .default => {
                     if (collectingIdentifier) {
-                        if (!(std.ascii.isAlNum(self.latestChar) or self.latestChar == '_') or self.latestChar == '.' or self.finalRun) {
+                        if (!(std.ascii.isAlphanumeric(self.latestChar) or self.latestChar == '_') or self.latestChar == '.' or self.finalRun) {
                             var finalSlice: []const u8 = undefined;
                             if (!self.finalRun) {
                                 finalSlice = self.slice[0 .. self.slice.len - 1];
@@ -405,7 +400,7 @@ pub const TokenStream = struct {
                     }
 
                     if (!collectingIdentifier) {
-                        if (std.ascii.isAlNum(self.latestChar) or self.latestChar == '_') {
+                        if (std.ascii.isAlphanumeric(self.latestChar) or self.latestChar == '_') {
                             collectingIdentifier = true;
                             self.length = 0;
                             shouldBreak = true;
@@ -413,14 +408,11 @@ pub const TokenStream = struct {
                     }
                     if (!shouldBreak) {
                         if (!collectingIdentifier) {
-                            if(std.mem.endsWith(u8, self.slice, "\r\n") or (self.slice[ self.slice.len - 1] == '\r'))
-                            {
+                            if (std.mem.endsWith(u8, self.slice, "\r\n") or (self.slice[self.slice.len - 1] == '\r')) {
                                 self.startIndex += 1;
                                 self.length = 0;
-                            }
-                            else 
-                            {
-                                try self.pushError("\nUnexpected token `{c}` ({any})\n>>>>>\n", .{self.slice, self.slice});
+                            } else {
+                                try self.pushError("\nUnexpected token `{c}` ({any})\n>>>>>\n", .{ self.slice, self.slice });
                                 self.startIndex += 1;
                                 self.length = 0;
                             }
@@ -437,8 +429,7 @@ pub const TokenStream = struct {
                                 finalSlice = self.slice[0 .. self.slice.len - 1];
                             }
 
-                            if(finalSlice.len == 0)
-                            {
+                            if (finalSlice.len == 0) {
                                 try self.pushError("Really messed up slice, scope was probably closed too early {any}", .{finalSlice});
                                 return;
                             }
@@ -509,13 +500,13 @@ pub const TokenStream = struct {
         std.debug.assert(self.tokens.items.len == self.token_types.items.len);
     }
 
-    pub fn pushError(self: *@This(),
-        comptime fmt: []const u8, 
+    pub fn pushError(
+        self: *@This(),
+        comptime fmt: []const u8,
         args: anytype,
-    ) !void
-    {
+    ) !void {
         std.debug.print(fmt, args);
-        var info = halc.ParserWarningOrErrorInfo {
+        var info = halc.ParserWarningOrErrorInfo{
             .errorType = .TokenzationError,
             .fileName = self.fileName,
             .lineNumber = self.lineNumber,
@@ -526,13 +517,10 @@ pub const TokenStream = struct {
             .msg = null,
         };
 
-        if(self.errorCtx) |ctx|
-        {
+        if (self.errorCtx) |ctx| {
             info.msg = try std.fmt.allocPrint(ctx.allocator, fmt, args);
             try ctx.pushError(info);
-        }
-        else 
-        {
+        } else {
             std.debug.print("\n", .{});
             info.msg = try std.fmt.allocPrint(self.allocator, fmt, args);
         }
@@ -541,8 +529,7 @@ pub const TokenStream = struct {
         defer self.allocator.free(s);
         std.debug.print("\ninfo >>>\n{s}\n", .{s});
 
-        if(self.errorCtx == null)
-        {
+        if (self.errorCtx == null) {
             self.allocator.free(info.msg.?);
         }
     }
@@ -575,10 +562,9 @@ test "error-context" {
     stream.errorCtx = &ctx;
     try stream.doTokenize();
 
-    for(ctx.messages.items) |msg|
-    {
+    for (ctx.messages.items) |msg| {
         var s = msg.allocPrettyPrint(allocator, simplest_with_error);
         defer allocator.free(s);
-        std.debug.print("{s}\n",.{s});
+        std.debug.print("{s}\n", .{s});
     }
 }

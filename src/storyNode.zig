@@ -14,10 +14,7 @@ const assert = std.debug.assert;
 const ParserPrint = nullPrint;
 
 //const ParserPrint = std.debug.print;
-fn nullPrint(comptime _: []const u8, _ : anytype) void 
-{
-
-}
+fn nullPrint(comptime _: []const u8, _: anytype) void {}
 
 pub const ParserWarningOrError = ParserError || ParserWarning || StoryNodesError;
 pub const StoryNodesError = error{ InstancesNotExistError, GeneralError };
@@ -152,7 +149,7 @@ pub const EventListenerInterfaceTable = struct {
     typeSize: usize,
     typeAlign: usize,
 
-    onEnteredNode: fn (*anyopaque, Node) void,
+    onEnteredNode: *const fn (*anyopaque, Node) void,
 
     pub fn from(comptime TargetType: type) @This() {
         if (!@hasDecl(TargetType, "onEnteredNode")) {
@@ -184,7 +181,7 @@ pub const EventListenerInterfaceRef = struct {
 
 pub const DirectiveImplDelegate = struct {
     ptr: *anyopaque,
-    func: fn (*anyopaque, [*c]const u8, c_int) callconv(.C) void,
+    func: *const fn (*anyopaque, [*c]const u8, c_int) callconv(.C) void,
 
     pub fn exec(self: *@This(), params: []const u8) void {
         self.func(self.ptr, params.ptr, @intCast(c_int, params.len));
@@ -194,8 +191,7 @@ pub const DirectiveImplDelegate = struct {
         const TargetType = @TypeOf(capture.*);
         const Wrapper = struct {
             pub fn exec(pointer: *anyopaque, paramPtr: [*c]const u8, len: c_int) callconv(.C) void {
-                if(paramPtr == null)
-                {
+                if (paramPtr == null) {
                     std.debug.print("bad pointer capture we aint gonna do anything", .{});
                     return;
                 }
@@ -560,10 +556,9 @@ pub const Interactor = struct {
                 continue;
             }
 
-            if (story.customDirectives.get(node)) |*directive| {
-                directive.exec(story.directiveParams.get(node).?.asUtf8Native() catch unreachable);
-                if(!self.retryNode)
-                {
+            if (story.customDirectives.getPtr(node)) |*directive| {
+                directive.*.exec(story.directiveParams.getPtr(node).?.asUtf8Native() catch unreachable);
+                if (!self.retryNode) {
                     try self.next();
                 }
                 shouldProceed = true;
@@ -872,7 +867,7 @@ pub const ParserWarningOrErrorInfo = struct {
                 msg = std.fmt.allocPrint(
                     allocator,
                     "{s}",
-                    .{ self.msg.? },
+                    .{self.msg.?},
                 ) catch unreachable;
             },
             .StoryContentError => {
@@ -880,7 +875,7 @@ pub const ParserWarningOrErrorInfo = struct {
                 msg = std.fmt.allocPrint(allocator, " ", .{}) catch unreachable;
             },
         }
-        return std.fmt.allocPrint(allocator, "{s}\n{s}", .{header, msg}) catch unreachable;
+        return std.fmt.allocPrint(allocator, "{s}\n{s}", .{ header, msg }) catch unreachable;
     }
 };
 
@@ -963,15 +958,13 @@ pub const NodeParser = struct {
         self.tokenStream.deinit();
         self.nodeLinkingRules.deinit();
         self.directiveList.deinit(self.allocator);
-        if(self.errors != null)
-        {
+        if (self.errors != null) {
             self.errors.?.deinit();
         }
     }
 
     pub fn loadSource(self: *@This(), source: []const u8, filename: ?[]const u8) !void {
-        if(filename)|f|
-        {
+        if (filename) |f| {
             self.filename = f;
         }
         self.source = source;
@@ -1164,20 +1157,17 @@ pub const NodeParser = struct {
     }
 
     pub fn pushError(self: *@This(), comptime fmt: []const u8, args: anytype) void {
-        var info = ParserWarningOrErrorInfo {
+        var info = ParserWarningOrErrorInfo{
             .errorType = .GeneralParserError,
             .fileName = self.filename,
             .lineNumber = self.lineNumber,
             .msg = null,
         };
 
-        if(self.errors) |ctx|
-        {
+        if (self.errors) |ctx| {
             info.msg = std.fmt.allocPrint(ctx.allocator, "General Parser Error: " ++ fmt, args) catch unreachable;
             ctx.pushError(info) catch unreachable;
-        }
-        else 
-        {
+        } else {
             std.debug.print("\n", .{});
             info.msg = std.fmt.allocPrint(self.allocator, "General Parser Error: " ++ fmt, args) catch unreachable;
         }
@@ -1186,8 +1176,7 @@ pub const NodeParser = struct {
         defer self.allocator.free(s);
         std.debug.print("\nerror info >>>\n{s}\n", .{s});
 
-        if(self.errors == null)
-        {
+        if (self.errors == null) {
             self.allocator.free(info.msg.?);
         }
     }
@@ -1225,8 +1214,7 @@ pub const NodeParser = struct {
             if (!shouldBreak and tokMatchGoto(tokenTypeSlice, dataSlice)) {
                 ParserPrint("{d}: Goto -> {s}\n", .{ self.lastNode.id, dataSlice[dataSlice.len - 1] });
                 if (self.lastNode.id > 0) {
-                    if(self.lastNode.id >= self.nodeLinkingRules.items.len)
-                    {
+                    if (self.lastNode.id >= self.nodeLinkingRules.items.len) {
                         self.pushError("Really bad goto generation", .{});
                         return ParserError.GeneralParserError;
                     }
@@ -1251,8 +1239,7 @@ pub const NodeParser = struct {
                     //try self.story.setLink(self.lastNode, self.story.instances.items[0]);
 
                     ParserPrint("{d}: end of story\n", .{self.lastNode.id});
-                    if(self.lastNode.id >= self.nodeLinkingRules.items.len)
-                    {
+                    if (self.lastNode.id >= self.nodeLinkingRules.items.len) {
                         self.pushError("malformed @end Directive pointing to bad id {d}", .{self.lastNode.id});
                         return ParserError.GeneralParserError;
                     }
@@ -1569,7 +1556,7 @@ test "init and deinit" {
     defer x.deinit();
 }
 
-const parser_error_case = 
+const parser_error_case =
     \\[hello]
     \\[hello]
     \\$: Hello! #second comment
@@ -1579,8 +1566,7 @@ const parser_error_case =
     \\@end
 ;
 
-test "parser-error"
-{
+test "parser-error" {
     const alloc = std.testing.allocator;
     var parser = NodeParser.init(alloc);
     defer parser.deinit();
