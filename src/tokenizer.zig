@@ -273,13 +273,22 @@ pub const TokenStream = struct {
         self.token_types.deinit();
     }
 
-    pub fn MakeTokens(targetData: []const u8, allocator: std.mem.Allocator) !Self {
+    // Run a quick preprocessing pass on the tokens.
+    // this deals with weird end of files, line endings, and
+    // weird characters.
+    fn preprocess(source: []const u8, allocator: std.mem.Allocator) []u8 {
+        _ = source;
+        _ = allocator;
+        return undefined;
+    }
+
+    pub fn MakeTokens(sourceData: []const u8, allocator: std.mem.Allocator) !Self {
         comptime std.debug.assert(@enumToInt(TokenType.ENUM_COUNT) == TokenDefinitions.len);
 
         var self = Self{
             .tokens = ArrayList([]const u8).init(allocator),
             .token_types = ArrayList(TokenType).init(allocator),
-            .source = targetData,
+            .source = sourceData,
         };
 
         var collectingIdentifier = false;
@@ -292,7 +301,7 @@ pub const TokenStream = struct {
             switch (self.mode) {
                 .default => {
                     if (collectingIdentifier) {
-                        if (!(std.ascii.isAlNum(self.latestChar) or self.latestChar == '_') or self.latestChar == '.' or self.finalRun) {
+                        if (!(std.ascii.isAlphanumeric(self.latestChar) or self.latestChar == '_') or self.latestChar == '.' or self.finalRun) {
                             var finalSlice: []const u8 = undefined;
                             if (!self.finalRun) {
                                 finalSlice = self.slice[0 .. self.slice.len - 1];
@@ -336,7 +345,7 @@ pub const TokenStream = struct {
                         shouldBreak = true;
                     }
 
-                    inline for (TokenDefinitions) |tok, i| {
+                    inline for (TokenDefinitions, 0..) |tok, i| {
                         var checkSlice = self.slice;
                         if (self.startIndex + tok.len < self.source.len) {
                             checkSlice = self.source[self.startIndex .. self.startIndex + tok.len];
@@ -352,7 +361,7 @@ pub const TokenStream = struct {
                     }
 
                     if (!collectingIdentifier) {
-                        if (std.ascii.isAlNum(self.latestChar) or self.latestChar == '_') {
+                        if (std.ascii.isAlphanumeric(self.latestChar) or self.latestChar == '_') {
                             collectingIdentifier = true;
                             self.length = 0;
                             shouldBreak = true;
@@ -445,16 +454,22 @@ pub const TokenStream = struct {
 
     pub fn test_display(self: Self) void {
         std.debug.print("tokens added: {d}\n", .{self.tokens.items.len});
-        for (self.tokens.items) |value, i| {
-            std.debug.print("{d}: `{s}` {s}\n", .{ i, value, @tagName(self.token_types.items[i]) });
+        for (self.tokens.items, 0..) |value, i| {
+            if (self.token_types.items[i] != .NEWLINE) {
+                std.debug.print("{d}: `{s}` {s}\n", .{ i, value, @tagName(self.token_types.items[i]) });
+            } else {
+                std.debug.print("{d}: `\\n` {s}\n", .{ i, @tagName(self.token_types.items[i]) });
+            }
         }
     }
 };
 
 test "Tokenizing test" {
     var stream = try TokenStream.MakeTokens(easySampleData, std.testing.allocator);
+    var stream2 = try TokenStream.MakeTokens(sampleData, std.testing.allocator);
+    stream2.test_display();
     // stream.test_display();
     defer stream.deinit();
-
+    defer stream2.deinit();
     // skipping the ast stage will make things easier but could possibly make things more difficult later..
 }
