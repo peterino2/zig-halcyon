@@ -954,7 +954,7 @@ pub const NodeParser = struct {
             }
             if (!shouldBreak and tokMatchGenericDirective(tokenTypeSlice)) {
                 nodesCount += 1;
-                const max = std.math.min(10, dataSlice.len);
+                const max = @min(10, dataSlice.len);
                 ParserPrint("{d}: Generic Directive: {s}\n", .{ nodesCount, dataSlice[0..max] });
                 const node = try self.story.newDirectiveNodeFromUtf8(dataSlice, alloc);
                 try self.story.setTextContentFromSlice(node, "Generic Directive");
