@@ -230,7 +230,7 @@ pub const StoryNodes = struct {
     pub fn setLinkByLabel(self: *Self, id: Node, label: []const u8) !Node {
         var next = self.findNodeByLabel(label) orelse return StoryNodesError.InstancesNotExistError;
         try self.nextNode.put(id, next);
-        try self.explicitLink.put(id, .{});
+        try self.explicitLink.put(id, void{});
         return next;
     }
 
@@ -645,7 +645,6 @@ pub const NodeParser = struct {
     }
 
     fn makeLinkingRules(self: *Self, node: Node) NodeLinkingRules {
-        _ = self;
         return NodeLinkingRules{
             .node = node,
             .tabLevel = self.tabLevel,
@@ -658,7 +657,6 @@ pub const NodeParser = struct {
         var rules = self.makeLinkingRules(node);
         rules.typeInfo = .{ .choice = .{} };
         try self.finishCreatingNode(node, rules);
-        _ = alloc;
     }
 
     fn matchFunctionCallGeneric(slice: []const TokenType, data: anytype, functionName: []const u8) bool {
@@ -954,7 +952,7 @@ pub const NodeParser = struct {
             }
             if (!shouldBreak and tokMatchGenericDirective(tokenTypeSlice)) {
                 nodesCount += 1;
-                const max = std.math.min(10, dataSlice.len);
+                const max = @min(10, dataSlice.len);
                 ParserPrint("{d}: Generic Directive: {s}\n", .{ nodesCount, dataSlice[0..max] });
                 const node = try self.story.newDirectiveNodeFromUtf8(dataSlice, alloc);
                 try self.story.setTextContentFromSlice(node, "Generic Directive");
@@ -1108,7 +1106,7 @@ test "parse with nodes" {
     // try testChoicesList(story, &.{0,0,0,0}, std.testing.allocator);
 
     std.debug.print("\n", .{});
-    for (story.textContent.items) |content, i| {
+    for (story.textContent.items, 0..) |content, i| {
         const node = story.instances.items[i];
         std.debug.assert(node.id == i);
         std.debug.print("{d}> {!s}\n", .{ i, content.asUtf8Native() });
@@ -1122,7 +1120,7 @@ test "parse simplest with no-conditionals" {
     // try testChoicesList(story, &.{0,0,0,0}, std.testing.allocator);
 
     std.debug.print("\n", .{});
-    for (story.textContent.items) |content, i| {
+    for (story.textContent.items, 0..) |content, i| {
         if (i == 0) continue;
         const node = story.instances.items[i];
         std.debug.assert(node.id == i);

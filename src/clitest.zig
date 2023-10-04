@@ -51,11 +51,11 @@ const NodeEntities = struct {
         try self.nodeTypes.append(NodeType.Text);
 
         std.debug.assert(self.instances.items.len > 0);
-        return @intCast(u32, self.instances.items.len - 1);
+        return @as(u32, @intCast(self.instances.items.len - 1));
     }
 
     pub fn newEntityFromPlainText(self: *Self, allocator: std.mem.Allocator, string: NodeStringView) !Node {
-        const id = @intCast(u32, try self.newEntity(allocator));
+        const id = @as(u32, @intCast(try self.newEntity(allocator)));
         try self.instances.items[id].appendSlice(string);
         return id;
     }
@@ -151,7 +151,6 @@ const HalcInteractor = struct {
         } else {
             self.isInteracting = false;
         }
-        _ = self;
     }
 
     pub fn choose(self: *Self, choice: u32) void {
@@ -256,8 +255,8 @@ test "simple branching story" {
     defer ecs.deinit();
 
     // test allocation and cleanup of entities
-    for (ecs.entities.instances.items) |entityText, i| {
-        const speaker = ecs.speakerNameComponents.instances.get(@intCast(u32, i));
+    for (ecs.entities.instances.items, 0..) |entityText, i| {
+        const speaker = ecs.speakerNameComponents.instances.get(@as(u32, @intCast(i)));
         var speakerName = if (speaker) |s| s.items else "default";
         try stdout.print("\n {s} id {d} : {s}", .{ speakerName, i, entityText.items });
     }
@@ -300,9 +299,7 @@ test "simple branching story" {
 
     try stdout.print("\n", .{});
 
-    _ = stdout;
     _ = stdin;
-    _ = allocator;
 }
 
 pub fn main() anyerror!void {
@@ -354,7 +351,7 @@ pub fn main() anyerror!void {
 
         // if there's choices print out choices
         if (choices.get(currentNode)) |currentChoices| {
-            for (currentChoices) |printChoice, i| {
+            for (currentChoices, 0..) |printChoice, i| {
                 const choiceContent = if (printChoice < dialogueTexts.items.len)
                     dialogueTexts.items[printChoice]
                 else
@@ -385,6 +382,4 @@ pub fn main() anyerror!void {
     }
 
     try stdout.print("bye.\n", .{});
-    _ = stdout;
-    _ = stdin;
 }

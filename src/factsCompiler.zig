@@ -5,7 +5,7 @@ const TokenStream = tokenizer.TokenStream;
 const ArrayListUnmanaged = std.ArrayListUnmanaged;
 
 const AstNodeType = enum {
-    terminal, // just
+    terminal, // a terminal node type, single character or breaking point.
 };
 
 const AstNode = struct {
@@ -101,6 +101,7 @@ test "compiler-hello-world" {
     //      compare, FactValue, FactValue
 
     const testSource2 = "g.hello == !true";
+    _ = testSource2;
     // expression
     // value(g.hello) operand(==)       expression
     //                              operand(!) value(true)
@@ -114,8 +115,6 @@ test "compiler-hello-world" {
     // ofc this can be easily optimized into:
     //      compare FactBool(False) FactRef(hello)
 
-    _ = testSource2;
-    _ = testSource;
     var tokstream = try tokenizer.TokenStream.MakeTokens(testSource, std.testing.allocator);
     defer tokstream.deinit();
 

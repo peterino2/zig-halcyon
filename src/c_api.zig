@@ -45,26 +45,26 @@ fn HalcStory_Parse_impl(str: HalcString, ret: *c.HalcStory) !c_int {
     strSlice.len = str.len;
 
     storyNodes.* = try s.NodeParser.DoParse(strSlice, allocator);
-    ret.*.nodes = @ptrCast(*halc_nodes_t, storyNodes);
+    ret.*.nodes = @as(*halc_nodes_t, @ptrCast(storyNodes));
     ret.*.num_nodes = storyNodes.*.instances.items.len;
 
     return 0;
 }
 
 fn StoryNodesIntoHandle(story: ?*StoryNodes) *halc_nodes_t {
-    return @ptrCast(*halc_nodes_t, story);
+    return @as(*halc_nodes_t, @ptrCast(story));
 }
 
 fn InteractorIntoHandle(story: ?*Interactor) *c.halc_interactor_t {
-    return @ptrCast(*c.halc_interactor_t, story);
+    return @as(*c.halc_interactor_t, @ptrCast(story));
 }
 
 fn GetStoryNodesFromHandle(story: ?*HalcStory) ?*StoryNodes {
-    return @ptrCast(*StoryNodes, @alignCast(8, story.?.nodes.?));
+    return @as(*StoryNodes, @ptrCast(@alignCast(story.?.nodes.?)));
 }
 
 fn GetInteractorFromHandle(i: ?*HalcInteractor) ?*Interactor {
-    return @ptrCast(*Interactor, @alignCast(@alignOf(Interactor), i.?.interactor.?));
+    return @as(*Interactor, @ptrCast(@alignCast(i.?.interactor.?)));
 }
 
 export fn HalcStory_Destroy(story: ?*c.HalcStory) void {
@@ -137,12 +137,12 @@ export fn HalcInteractor_Next(
         return -1;
     };
     interactor.?.*.id = i.?.node.id;
-    return @intCast(c_int, i.?.node.id);
+    return @intCast(i.?.node.id);
 }
 
 fn GetArrayListFromChoices(array: ?*HalcChoicesList) ?*ArrayList(HalcString) {
-    std.debug.print("addr of choicesList From ZIG {}\n", .{array.?.handle.?});
-    return @ptrCast(*ArrayList(HalcString), @alignCast(@alignOf(ArrayList(HalcString)), array.?.handle.?));
+    std.debug.print("addr of choicesList From ZIG 0x{x}\n", .{@intFromPtr(array.?.handle.?)});
+    return @ptrCast(@alignCast(array.?.handle.?));
 }
 
 export fn HalcInteractor_GetChoices(
@@ -189,9 +189,9 @@ export fn HalcInteractor_GetChoices(
         choices.?.* = .{
             .len = halcStrings.items.len,
             .strings = &halcStrings.items[0],
-            .handle = @ptrCast(*c.halc_strings_array_t, @alignCast(@alignOf(ArrayList(HalcString)), handle)),
+            .handle = @ptrCast(@alignCast(handle)),
         };
-        return @intCast(c_int, halcStrings.items.len);
+        return @intCast(halcStrings.items.len);
     }
     return -1;
 }
@@ -217,11 +217,10 @@ export fn HalcInteractor_SelectChoice(
         return -1;
     }
 
-    return @intCast(c_int, i.node.id);
+    return @intCast(i.node.id);
 }
 
 export fn HalcChoicesList_Destroy(list: ?*HalcChoicesList) void {
-    _ = list;
     var x = GetArrayListFromChoices(list.?).?;
     x.deinit();
     allocator.destroy(x);

@@ -274,7 +274,7 @@ pub const TokenStream = struct {
     }
 
     pub fn MakeTokens(targetData: []const u8, allocator: std.mem.Allocator) !Self {
-        comptime std.debug.assert(@enumToInt(TokenType.ENUM_COUNT) == TokenDefinitions.len);
+        comptime std.debug.assert(@intFromEnum(TokenType.ENUM_COUNT) == TokenDefinitions.len);
 
         var self = Self{
             .tokens = ArrayList([]const u8).init(allocator),
@@ -292,7 +292,7 @@ pub const TokenStream = struct {
             switch (self.mode) {
                 .default => {
                     if (collectingIdentifier) {
-                        if (!(std.ascii.isAlNum(self.latestChar) or self.latestChar == '_') or self.latestChar == '.' or self.finalRun) {
+                        if (!(std.ascii.isAlphanumeric(self.latestChar) or self.latestChar == '_') or self.latestChar == '.' or self.finalRun) {
                             var finalSlice: []const u8 = undefined;
                             if (!self.finalRun) {
                                 finalSlice = self.slice[0 .. self.slice.len - 1];
@@ -336,14 +336,14 @@ pub const TokenStream = struct {
                         shouldBreak = true;
                     }
 
-                    inline for (TokenDefinitions) |tok, i| {
+                    inline for (TokenDefinitions, 0..) |tok, i| {
                         var checkSlice = self.slice;
                         if (self.startIndex + tok.len < self.source.len) {
                             checkSlice = self.source[self.startIndex .. self.startIndex + tok.len];
                         }
                         if (!shouldBreak and std.mem.eql(u8, checkSlice, tok)) {
                             try self.tokens.append(checkSlice);
-                            try self.token_types.append(@intToEnum(TokenType, i));
+                            try self.token_types.append(@as(TokenType, @enumFromInt(i)));
                             self.startIndex = self.startIndex + checkSlice.len;
                             self.length = 0;
                             self.mode = ParserMode.default;
@@ -352,7 +352,7 @@ pub const TokenStream = struct {
                     }
 
                     if (!collectingIdentifier) {
-                        if (std.ascii.isAlNum(self.latestChar) or self.latestChar == '_') {
+                        if (std.ascii.isAlphanumeric(self.latestChar) or self.latestChar == '_') {
                             collectingIdentifier = true;
                             self.length = 0;
                             shouldBreak = true;
@@ -445,7 +445,7 @@ pub const TokenStream = struct {
 
     pub fn test_display(self: Self) void {
         std.debug.print("tokens added: {d}\n", .{self.tokens.items.len});
-        for (self.tokens.items) |value, i| {
+        for (self.tokens.items, 0..) |value, i| {
             std.debug.print("{d}: `{s}` {s}\n", .{ i, value, @tagName(self.token_types.items[i]) });
         }
     }

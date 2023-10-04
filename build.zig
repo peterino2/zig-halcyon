@@ -3,51 +3,46 @@ const std = @import("std");
 pub fn build(b: *std.build.Builder) void {
     // Standard target options allows the person running `zig build` to choose
     // what target to build for. Here we do not override the defaults, which
-    // means any target is allowed, and the default is native. Other options
-    // for restricting supported target set are available.
     const target = b.standardTargetOptions(.{});
+    const optimize = b.standardOptimizeOption(.{});
 
-    // Standard release options allow the person running `zig build` to select
-    // between Debug, ReleaseSafe, ReleaseFast, and ReleaseSmall.
-    const mode = b.standardReleaseOptions();
+    const c_test = b.addExecutable(.{
+        .name = "c_test",
+        .optimize = optimize,
+        .target = target,
+    });
 
-    const c_test = b.addExecutable("c_test", null);
-    c_test.addCSourceFile("src/c_api/test.cpp", &.{});
-    c_test.addIncludeDir("src/c_api/inc");
+    c_test.addCSourceFile(.{
+        .file = .{ .path = "src/c_api/test.cpp" },
+        .flags = &.{},
+    });
+
+    c_test.addIncludePath(.{ .path = "src/c_api/inc" });
     c_test.linkLibC();
     c_test.linkLibCpp();
-    const c_test_run = c_test.run();
+    const c_test_run = b.addRunArtifact(c_test);
 
     if (true) {
-        const halcShared = b.addSharedLibrary(
-            "Halcyon",
-            "src/c_api.zig",
-            b.version(0, 0, 1),
-        );
-        halcShared.setTarget(target);
-        halcShared.setBuildMode(mode);
-        halcShared.addIncludeDir("src/c_api/inc");
-        //halcShared.setLibCFile(std.build.FileSource{ .path = "libc.txt" });
+        const halcShared = b.addSharedLibrary(.{
+            .name = "Halcyon",
+            .root_source_file = .{ .path = "src/c_api.zig" },
+            .version = (std.SemanticVersion.parse("0.0.1") catch unreachable),
+            .optimize = optimize,
+            .target = target,
+        });
+        halcShared.optimize = optimize;
+        halcShared.addIncludePath(.{ .path = "src/c_api/inc" });
         halcShared.bundle_compiler_rt = true;
-        halcShared.install();
+        b.installArtifact(halcShared);
 
-        c_test.linkLibrary(halcShared);
-    } else {
-        const halcShared = b.addStaticLibrary(
-            "Halcyon",
-            "src/c_api.zig",
-        );
-        halcShared.setTarget(target);
-        halcShared.setBuildMode(mode);
-        halcShared.addIncludeDir("src/c_api/inc");
-        halcShared.linkLibC();
-        halcShared.install();
         c_test.linkLibrary(halcShared);
     }
 
-    const exe_tests = b.addTest("src/main.zig");
-    exe_tests.setTarget(target);
-    exe_tests.setBuildMode(mode);
+    const exe_tests = b.addTest(.{
+        .root_source_file = .{ .path = "src/cliTest.zig" },
+        .name = "test",
+    });
+    exe_tests.optimize = optimize;
 
     const test_step = b.step("test", "Run unit tests");
     test_step.dependOn(&exe_tests.step);
