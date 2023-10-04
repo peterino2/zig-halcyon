@@ -23,3 +23,4 @@ kernel32_lib_dir=C:\Program Files (x86)\Windows Kits\10\Lib\10.0.19041.0\um\x64
 # The directory that contains `crtbeginS.o` and `crtendS.o`
 # Only needed when targeting Haiku.
 gcc_dir=
+

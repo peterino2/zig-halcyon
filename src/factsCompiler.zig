@@ -84,7 +84,7 @@ const CompilerAst = struct {
     }
 };
 
-test "compiler-hello-world" {
+test "ast-hello-world" {
     const testSource = "g.hello == true";
 
     // results in ast:

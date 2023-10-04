@@ -4,8 +4,8 @@ const fileHandler = @import("fileHandler.zig");
 
 const ArrayList = std.ArrayList;
 const AutoHashMap = std.AutoHashMap;
-const TokenStream = tokenizer.TokenStream;
-const TokenType = tokenizer.TokenStream.TokenType;
+const Tokenizer = tokenizer.Tokenizer;
+const TokenType = tokenizer.Tokenizer.TokenType;
 
 pub const storyStartLabel = "@__STORY_START__";
 pub const storyEndLabel = "@__STORY_END__";
@@ -545,9 +545,9 @@ fn tokMatchDialogueChoice(slice: []const TokenType) bool {
 }
 
 pub const DelcarativeParser = struct {
-    toks: *const TokenStream,
+    toks: *const Tokenizer,
 
-    pub fn ParseTokStream(toks: TokenStream) !void {
+    pub fn ParseTokStream(toks: Tokenizer) !void {
         var self = .{toks};
         _ = self;
     }
@@ -606,7 +606,7 @@ pub const ParserWarningOrErrorInfo = struct {
 pub const NodeParser = struct {
     const Self = @This();
 
-    tokenStream: TokenStream,
+    tokenizer: Tokenizer,
     isParsing: bool = true,
     tabLevel: usize = 0,
     lineNumber: usize = 1,
@@ -694,7 +694,7 @@ pub const NodeParser = struct {
 
     fn deinit(self: *Self) void {
         // we dont release the storyNodes
-        self.tokenStream.deinit();
+        self.tokenizer.deinit();
         self.nodeLinkingRules.deinit();
         self.errors.deinit();
         self.warnings.deinit();
@@ -702,7 +702,7 @@ pub const NodeParser = struct {
 
     pub fn MakeParser(source: []const u8, alloc: std.mem.Allocator) !Self {
         var rv = Self{
-            .tokenStream = try TokenStream.MakeTokens(source, alloc),
+            .tokenizer = try Tokenizer.MakeTokens(source, alloc),
             .story = StoryNodes.init(alloc),
             .nodeLinkingRules = ArrayList(NodeLinkingRules).init(alloc),
             .lastLabel = "",
@@ -859,8 +859,8 @@ pub const NodeParser = struct {
         var self = try Self.MakeParser(source, alloc);
         defer self.deinit();
 
-        const tokenTypes = self.tokenStream.token_types;
-        const tokenData = self.tokenStream.tokens;
+        const tokenTypes = self.tokenizer.token_types;
+        const tokenData = self.tokenizer.tokens;
 
         var nodesCount: u32 = 0;
 

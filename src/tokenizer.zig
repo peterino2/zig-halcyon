@@ -1,6 +1,5 @@
 const std = @import("std");
 const ArrayList = std.ArrayList;
-const AutoHashMap = std.AutoHashMap;
 
 pub const simplest_v1 =
     \\[hello]
@@ -167,96 +166,120 @@ pub const sampleData =
     \\            Grace: I- I- don't know what I saw. I can tell you but... it's complicated.
 ;
 
-pub const TokenStream = struct {
-    const TokenDefinitions: []const []const u8 = &.{
-        "==",
-        "!=",
-        "<=",
-        ">=",
-        "[",
-        "]",
-        "@",
-        ">",
-        ";",
-        "(",
-        ")",
-        ".",
-        "$",
-        " ",
-        "\n",
-        "\r",
-        "\t",
-        "!",
-        "=",
-        "<",
-        "{",
-        "}",
-        "#",
-        "+",
-        "-",
-        ",",
-        ";",
-        "&",
-        "\"",
-    };
+const TokenDefinitions: []const []const u8 = &.{
+    "==",
+    "!=",
+    "<=",
+    ">=",
+    "[",
+    "]",
+    "@",
+    ">",
+    ";",
+    "(",
+    ")",
+    ".",
+    "$",
+    " ",
+    "\n",
+    "\r",
+    "\t",
+    "!",
+    "=",
+    "<",
+    "{",
+    "}",
+    "#",
+    "+",
+    "-",
+    ",",
+    ";",
+    "&",
+    "\"",
+};
 
-    const LeaveTextModeTokens: []const []const u8 = &.{
-        "\n",
-        "\n\r", // 1 = r_square_brack
-        "#",
-        ":",
-    };
+const LeaveTextModeTokens: []const []const u8 = &.{
+    "\n",
+    "\n\r", // 1 = r_square_brack
+    "#",
+    ":",
+};
 
-    const LeaveCommentModeTokens: []const []const u8 = &.{
-        "\n",
-        "\n\r", // 1 = r_square_brack
-    };
+const LeaveCommentModeTokens: []const []const u8 = &.{
+    "\n",
+    "\n\r", // 1 = r_square_brack
+};
 
-    pub const TokenType = enum {
-        EQUIV,
-        NOT_EQUIV,
-        LESS_EQ,
-        GREATER_EQ,
-        L_SQBRACK,
-        R_SQBRACK,
-        AT,
-        R_ANGLE,
-        COLON,
-        L_PAREN,
-        R_PAREN,
-        DOT,
-        SPEAKERSIGN,
-        SPACE,
-        NEWLINE,
-        CARRIAGE_RETURN,
-        TAB,
-        EXCLAMATION,
-        EQUALS,
-        L_ANGLE,
-        L_BRACE,
-        R_BRACE,
-        HASHTAG,
-        PLUS,
-        MINUS,
-        COMMA,
-        SEMICOLON,
-        AMPERSAND,
-        DOUBLE_QUOTE,
-        ENUM_COUNT,
-        // other token types
-        LABEL,
-        STORY_TEXT,
-        COMMENT,
-    };
+pub const TokenType = enum {
+    EQUIV,
+    NOT_EQUIV,
+    LESS_EQ,
+    GREATER_EQ,
+    L_SQBRACK,
+    R_SQBRACK,
+    AT,
+    R_ANGLE,
+    COLON,
+    L_PAREN,
+    R_PAREN,
+    DOT,
+    SPEAKERSIGN,
+    SPACE,
+    NEWLINE,
+    CARRIAGE_RETURN,
+    TAB,
+    EXCLAMATION,
+    EQUALS,
+    L_ANGLE,
+    L_BRACE,
+    R_BRACE,
+    HASHTAG,
+    PLUS,
+    MINUS,
+    COMMA,
+    SEMICOLON,
+    AMPERSAND,
+    DOUBLE_QUOTE,
+    ENUM_COUNT,
+    // other token types
+    LABEL,
+    STORY_TEXT,
+    COMMENT,
+};
 
-    const ParserMode = enum {
-        default, // parses labels and one-offs
-        text,
-        comments,
-    };
+const ParserMode = enum {
+    default, // parses labels and one-offs
+    text,
+    comments,
+};
 
-    tokens: ArrayList([]const u8),
-    token_types: ArrayList(Self.TokenType),
+pub const Tokens = struct {
+    allocator: std.mem.Allocator,
+    tokens: std.ArrayListUnmanaged([]const u8),
+    token_types: std.ArrayListUnmanaged(TokenType),
+
+    pub fn deinit(self: *@This()) void {
+        self.tokens.deinit(self.allocator);
+        self.token_types.deinit(self.allocator);
+    }
+
+    pub fn test_display(self: @This()) void {
+        std.debug.print("tokens added: {d}\n", .{self.tokens.items.len});
+        for (self.tokens.items, 0..) |value, i| {
+            std.debug.print("{d}: `{s}` {s}\n", .{ i, value, @tagName(self.token_types.items[i]) });
+        }
+    }
+};
+
+pub const TokenizerOptions = struct {
+    debug: bool = false,
+};
+
+pub const Tokenizer = struct {
+    allocator: std.mem.Allocator,
+    tokens: std.ArrayListUnmanaged([]const u8),
+    token_types: std.ArrayListUnmanaged(TokenType),
+
     isTokenizing: bool = true,
     finalRun: bool = false,
     startIndex: usize = 0,
@@ -265,196 +288,257 @@ pub const TokenStream = struct {
     source: []const u8,
     latestChar: u8 = 0,
     mode: ParserMode = ParserMode.default,
+    shouldBreak: bool = false,
+    collectingIdentifier: bool = false,
 
-    const Self = @This();
+    opts: TokenizerOptions = .{},
 
-    pub fn deinit(self: *Self) void {
-        self.tokens.deinit();
-        self.token_types.deinit();
+    fn getStateString(self: @This()) []const u8 {
+        switch (self.mode) {
+            .default => return "default",
+            .comment => return "comment",
+            .text => return "text",
+        }
     }
 
-    pub fn MakeTokens(targetData: []const u8, allocator: std.mem.Allocator) !Self {
+    pub fn MakeTokens(targetData: []const u8, allocator: std.mem.Allocator, options: TokenizerOptions) !Tokens {
+
+        // ensure that we have properly created an enum for every single enum
         comptime std.debug.assert(@intFromEnum(TokenType.ENUM_COUNT) == TokenDefinitions.len);
 
-        var self = Self{
-            .tokens = ArrayList([]const u8).init(allocator),
-            .token_types = ArrayList(TokenType).init(allocator),
+        var self = @This(){
+            .allocator = allocator,
+            .tokens = .{},
+            .token_types = .{},
+            .opts = options,
             .source = targetData,
         };
 
-        var collectingIdentifier = false;
-
         while (self.isTokenizing) {
+            if (self.opts.debug) {
+                std.debug.print("[{s}] ", .{self.getStateString()});
+                std.debug.print("startIndex: {d}, ", .{self.startIndex});
+                std.debug.print("length: {d},", .{self.length});
+                std.debug.print("slice: {s},\n", .{self.slice});
+            }
             self.slice = self.source[self.startIndex .. self.startIndex + self.length];
             self.latestChar = self.slice[self.slice.len - 1];
+            self.shouldBreak = false;
 
-            var shouldBreak = false;
             switch (self.mode) {
                 .default => {
-                    if (collectingIdentifier) {
-                        if (!(std.ascii.isAlphanumeric(self.latestChar) or self.latestChar == '_') or self.latestChar == '.' or self.finalRun) {
-                            var finalSlice: []const u8 = undefined;
-                            if (!self.finalRun) {
-                                finalSlice = self.slice[0 .. self.slice.len - 1];
-                            } else if (self.finalRun) {
-                                finalSlice = self.source[self.startIndex..];
-                            }
-                            try self.tokens.append(finalSlice);
-                            try self.token_types.append(TokenType.LABEL);
-                            self.startIndex = self.startIndex + self.length - 1;
-                            self.length = 0;
-                            self.mode = ParserMode.default;
-                            shouldBreak = true;
-                            collectingIdentifier = false;
-                        }
-                    }
-
-                    if (!shouldBreak and self.latestChar == '#') {
-                        try self.tokens.append("#");
-                        try self.token_types.append(TokenType.HASHTAG);
-                        self.startIndex = self.startIndex + self.length;
-                        self.length = 0;
-                        self.mode = ParserMode.comments;
-                        shouldBreak = true;
-                    }
-
-                    if (!shouldBreak and self.latestChar == ':') {
-                        try self.tokens.append(":");
-                        try self.token_types.append(TokenType.COLON);
-                        self.startIndex = self.startIndex + self.length;
-                        self.length = 0;
-                        self.mode = ParserMode.text;
-                        shouldBreak = true;
-                    }
-
-                    if (!shouldBreak and self.latestChar == '>') {
-                        try self.tokens.append(">");
-                        try self.token_types.append(TokenType.R_ANGLE);
-                        self.startIndex = self.startIndex + self.length;
-                        self.length = 0;
-                        self.mode = ParserMode.text;
-                        shouldBreak = true;
-                    }
-
-                    inline for (TokenDefinitions, 0..) |tok, i| {
-                        var checkSlice = self.slice;
-                        if (self.startIndex + tok.len < self.source.len) {
-                            checkSlice = self.source[self.startIndex .. self.startIndex + tok.len];
-                        }
-                        if (!shouldBreak and std.mem.eql(u8, checkSlice, tok)) {
-                            try self.tokens.append(checkSlice);
-                            try self.token_types.append(@as(TokenType, @enumFromInt(i)));
-                            self.startIndex = self.startIndex + checkSlice.len;
-                            self.length = 0;
-                            self.mode = ParserMode.default;
-                            shouldBreak = true;
-                        }
-                    }
-
-                    if (!collectingIdentifier) {
-                        if (std.ascii.isAlphanumeric(self.latestChar) or self.latestChar == '_') {
-                            collectingIdentifier = true;
-                            self.length = 0;
-                            shouldBreak = true;
-                        }
-                    }
-                    if (!shouldBreak) {
-                        if (!collectingIdentifier) {
-                            std.debug.print("\nUnexpected token `{c}`\n>>>>>\n", .{self.slice});
-                            self.startIndex += 1;
-                            self.length = 0;
-                        }
-                    }
+                    try self.parseSlice_Default();
                 },
                 .text => {
-                    inline for (LeaveTextModeTokens) |tok| {
-                        if (!shouldBreak and (std.mem.endsWith(u8, self.slice, tok) or self.finalRun)) {
-                            var finalSlice: []const u8 = undefined;
-                            if (self.finalRun) {
-                                finalSlice = self.source[self.startIndex..];
-                            } else {
-                                finalSlice = self.slice[0 .. self.slice.len - 1];
-                            }
-
-                            // strip leading and trailing whitespaces.
-                            var finalSliceStartIndex: usize = 0;
-                            while (finalSlice[finalSliceStartIndex] == ' ' and finalSliceStartIndex < finalSlice.len - 1) {
-                                finalSliceStartIndex += 1;
-                            }
-
-                            var finalSliceEndIndex: usize = finalSlice.len - 1;
-                            while (finalSlice[finalSliceEndIndex] == ' ' and finalSliceEndIndex > 0) {
-                                finalSliceEndIndex -= 1;
-                            }
-
-                            try self.tokens.append(finalSlice[finalSliceStartIndex .. finalSliceEndIndex + 1]);
-                            try self.token_types.append(TokenType.STORY_TEXT);
-
-                            self.startIndex = self.startIndex + self.length;
-                            self.length = 0;
-                            self.mode = ParserMode.default;
-                            shouldBreak = true;
-                        }
-                    }
-
-                    if (shouldBreak) {
-                        if (std.mem.endsWith(u8, self.slice, "#")) {
-                            self.mode = ParserMode.comments;
-                            try self.tokens.append("#");
-                            try self.token_types.append(TokenType.HASHTAG);
-                        } else {
-                            try self.tokens.append("\n");
-                            try self.token_types.append(TokenType.NEWLINE);
-                        }
-                        if (std.mem.endsWith(u8, self.slice, "\r")) {
-                            // std.debug.assert(false, "File is encoded with carraige return. The standard is linefeed (\n) only as the linebreak");
-                        }
-                    }
+                    try self.parseSlice_Text();
                 },
                 .comments => {
-                    inline for (LeaveTextModeTokens) |tok| {
-                        if (!shouldBreak and (std.mem.endsWith(u8, self.slice, tok) or self.finalRun)) {
-                            if (self.finalRun) {
-                                try self.tokens.append(self.source[self.startIndex..]);
-                            } else {
-                                try self.tokens.append(self.slice[0 .. self.slice.len - 1]);
-                            }
-                            try self.token_types.append(TokenType.COMMENT);
-                            self.startIndex = self.startIndex + self.length - 1;
-                            self.length = 0;
-                            self.mode = ParserMode.default;
-                            shouldBreak = true;
-                        }
-                    }
+                    try self.parseSlice_Comments();
                 },
             }
 
-            if (self.finalRun) {
-                self.isTokenizing = false;
-            } else if (self.startIndex + self.length == self.source.len) {
-                self.finalRun = true;
-                continue;
+            if (!self.shouldBreak) {
+                self.length += 1;
             }
-            self.length += 1;
         }
 
         std.debug.assert(self.tokens.items.len == self.token_types.items.len);
 
-        return self;
+        return .{
+            .tokens = self.tokens,
+            .token_types = self.token_types,
+            .allocator = allocator,
+        };
     }
 
-    pub fn test_display(self: Self) void {
-        std.debug.print("tokens added: {d}\n", .{self.tokens.items.len});
-        for (self.tokens.items, 0..) |value, i| {
-            std.debug.print("{d}: `{s}` {s}\n", .{ i, value, @tagName(self.token_types.items[i]) });
+    fn switchMode(self: *@This(), newMode: ParserMode) !void {
+        // cleanup operations for exiting the current mode
+        switch (self.mode) {
+            .default => {
+                if (newMode == .default) {
+                    return error.InvalidStateChange_SameState;
+                }
+            },
+            .text => {
+                if (newMode == .text) {
+                    return error.InvalidStateChange_SameState;
+                }
+            },
+            .comments => {},
+        }
+
+        // setup operations for entering the new mode
+        switch (newMode) {
+            .default => {},
+            .text => {},
+            .comments => {},
+        }
+
+        // speicific mode swithc operations
+
+        self.mode = newMode;
+    }
+
+    fn advance(self: *@This()) !void {
+        self.startIndex = self.startIndex + self.length;
+        self.length = 1;
+        self.shouldBreak = true;
+        if (self.startIndex + self.length > self.source.len) {
+            return error.TokenizerOutOfBoundsError;
+        }
+    }
+
+    fn pushToken(self: *@This(), token: []const u8, token_type: TokenType) !void {
+        try self.tokens.append(self.allocator, token);
+        try self.token_types.append(self.allocator, token_type);
+    }
+
+    fn pushAndAdvance(self: *@This(), token_type: TokenType) !void {
+        try self.pushToken(self.slice, token_type);
+        try self.advance();
+    }
+
+    // tokenizer behaviour in the default state.
+    pub fn parseSlice_Default(self: *@This()) !void {
+        if (self.collectingIdentifier) {
+            if (!(std.ascii.isAlphanumeric(self.latestChar) or self.latestChar == '_') or self.latestChar == '.' or self.finalRun) {
+                self.pushAndAdvance(.LABEL);
+                self.collectingIdentifier = false;
+            }
+        }
+
+        if (!self.shouldBreak and self.latestChar == '#') {
+            self.pushAndAdvance(.HASHTAG);
+            self.switchMode(.comments);
+        }
+
+        if (!self.shouldBreak and self.latestChar == ':') {
+            self.pushAndAdvance(.COLON);
+            self.switchMode(.text);
+        }
+
+        if (!self.shouldBreak and self.latestChar == '>') {
+            try self.tokens.append(self.allocator, ">");
+            try self.token_types.append(self.allocator, TokenType.R_ANGLE);
+            self.startIndex = self.startIndex + self.length;
+            self.length = 0;
+            self.shouldBreak = true;
+            self.mode = ParserMode.text;
+        }
+
+        inline for (TokenDefinitions, 0..) |tok, i| {
+            var checkSlice = self.slice;
+            if (self.startIndex + tok.len < self.source.len) {
+                checkSlice = self.source[self.startIndex .. self.startIndex + tok.len];
+            }
+            if (!self.shouldBreak and std.mem.eql(u8, checkSlice, tok)) {
+                try self.tokens.append(self.allocator, checkSlice);
+                try self.token_types.append(self.allocator, @as(TokenType, @enumFromInt(i)));
+                self.startIndex = self.startIndex + checkSlice.len;
+                self.length = 0;
+                self.shouldBreak = true;
+                self.mode = ParserMode.default;
+            }
+        }
+
+        if (!self.collectingIdentifier) {
+            if (std.ascii.isAlphanumeric(self.latestChar) or self.latestChar == '_') {
+                self.collectingIdentifier = true;
+                self.length = 0;
+                self.shouldBreak = true;
+            }
+        }
+        if (!self.shouldBreak) {
+            if (!self.collectingIdentifier) {
+                std.debug.print("\nUnexpected token `{c}`\n>>>>>\n", .{self.slice});
+                self.startIndex += 1;
+                self.length = 0;
+            }
+        }
+    }
+
+    // parser behaviour when we are in the 'text' state
+    fn parseSlice_Text(self: *@This()) !void {
+        inline for (LeaveTextModeTokens) |tok| {
+            if (!self.shouldBreak and (std.mem.endsWith(u8, self.slice, tok))) {
+                var finalSlice: []const u8 = undefined;
+                finalSlice = self.slice[0 .. self.slice.len - 1];
+
+                // strip leading and trailing whitespaces.
+                var finalSliceStartIndex: usize = 0;
+                while (finalSlice[finalSliceStartIndex] == ' ' and finalSliceStartIndex < finalSlice.len - 1) {
+                    finalSliceStartIndex += 1;
+                }
+
+                var finalSliceEndIndex: usize = finalSlice.len - 1;
+                while (finalSlice[finalSliceEndIndex] == ' ' and finalSliceEndIndex > 0) {
+                    finalSliceEndIndex -= 1;
+                }
+
+                try self.tokens.append(self.allocator, finalSlice[finalSliceStartIndex .. finalSliceEndIndex + 1]);
+                try self.token_types.append(self.allocator, TokenType.STORY_TEXT);
+
+                self.startIndex = self.startIndex + self.length;
+                self.length = 0;
+                self.mode = ParserMode.default;
+                self.shouldBreak = true;
+            }
+        }
+
+        if (self.shouldBreak) {
+            if (std.mem.endsWith(u8, self.slice, "#")) {
+                self.mode = ParserMode.comments;
+                try self.tokens.append(self.allocator, "#");
+                try self.token_types.append(self.allocator, TokenType.HASHTAG);
+            } else {
+                try self.tokens.append(self.allocator, "\n");
+                try self.token_types.append(self.allocator, TokenType.NEWLINE);
+            }
+            if (std.mem.endsWith(u8, self.slice, "\r")) {
+                std.debug.print("File is encoded with carraige return. The standard is linefeed (\\n) only as the linebreak. We only support UTF-8 with \\n as the line ending. To fix this use dos2unix or you can use visual studio code and resave the file.\n", .{});
+            }
+        }
+    }
+
+    pub fn parseSlice_Comments(self: *@This()) !void {
+        inline for (LeaveTextModeTokens) |tok| {
+            if (!self.shouldBreak and (std.mem.endsWith(u8, self.slice, tok))) {
+                try self.tokens.append(self.allocator, self.source[self.startIndex..]);
+                try self.token_types.append(self.allocator, TokenType.COMMENT);
+                self.startIndex = self.startIndex + self.length - 1;
+                self.length = 0;
+                self.mode = ParserMode.default;
+                self.shouldBreak = true;
+            }
         }
     }
 };
 
-test "Tokenizing test" {
-    var stream = try TokenStream.MakeTokens(easySampleData, std.testing.allocator);
-    // stream.test_display();
-    defer stream.deinit();
+pub fn load_file_alloc(
+    filename: []const u8,
+    allocator: std.mem.Allocator,
+) ![]const u8 {
+    var file = try std.fs.cwd().openFile(filename, .{ .mode = .read_only });
+    const filesize = (try file.stat()).size;
+    var buffer: []u8 = try allocator.alignedAlloc(u8, 1, filesize);
+    try file.reader().readNoEof(buffer);
+    return buffer;
+}
 
-    // skipping the ast stage will make things easier but could possibly make things more difficult later..
+test "Tokenizing test" {
+    var stream = try Tokenizer.MakeTokens(easySampleData, std.testing.allocator, .{ .debug = true });
+    stream.test_display();
+    defer stream.deinit();
+}
+
+test "errors" {
+    var allocator = std.testing.allocator;
+    var erroredString = try load_file_alloc("sample_files/windows_line_endings.halc", allocator);
+    defer allocator.free(erroredString);
+
+    // Errors should be reported
+    var toks = try Tokenizer.MakeTokens(erroredString, allocator, .{});
+    toks.test_display();
+
+    defer toks.deinit();
 }
