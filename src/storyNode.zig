@@ -893,17 +893,19 @@ pub const NodeParser = struct {
             const tokenTypeSlice = tokenTypes.items[self.currentTokenWindow.startIndex..self.currentTokenWindow.endIndex];
             const dataSlice = tokenData.items[self.currentTokenWindow.startIndex..self.currentTokenWindow.endIndex];
 
-            ParserPrint("[", .{});
-            for (dataSlice, 0..) |tok, i| {
-                ParserPrint("{{", .{});
-                addJsonField_String("type", "{any}", .{tokenTypeSlice[i]});
-                addJsonField_String_end("value", "{s}", .{tok});
-                ParserPrint("}}", .{});
-                if (i != dataSlice.len - 1) {
-                    ParserPrint(",", .{});
+            if (false) {
+                ParserPrint("[", .{});
+                for (dataSlice, 0..) |tok, i| {
+                    ParserPrint("{{", .{});
+                    addJsonField_String("type", "{any}", .{tokenTypeSlice[i]});
+                    addJsonField_String_end("value", "{s}", .{tok});
+                    ParserPrint("}}", .{});
+                    if (i != dataSlice.len - 1) {
+                        ParserPrint(",", .{});
+                    }
                 }
+                ParserPrint("]\n", .{});
             }
-            ParserPrint("]\n", .{});
 
             var shouldBreak = false;
             if (!shouldBreak and tokMatchComment(tokenTypeSlice)) {
