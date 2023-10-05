@@ -143,27 +143,29 @@ pub const sampleData =
     \\    > Hello:
     \\        @goto hello
     \\# you can add comments with #
-    \\[talk_to_grace; @once(grace)]
-    \\    $: She's hunched over her meal, barely making any effort to eat.
-    \\    Grace: Huh?... Oh I'm sorry I didn't quite see you there.
-    \\    Grace: I guess I'm a bit distracted
-    \\    [talk_to_grace_eating]
-    \\        > Is everything alright? You're hardly eating.
-    \\            @todo
-    \\        > Hear any interesting rumors?
-    \\            $: She sheepishly avoids your eye contact and resumes forking through her plate.
-    \\            Grace: Sorry... I don't really have any rumors. 
-    \\            : I'm just trying to eat here ok? # you can multiline text with ':' this will append it onto the previous line
-    \\            # there are no multiline comments.
-    \\            @goto talk_to_grace_eating
-    \\        @if( p.canParticiate(Dean) and p.party.contains(Dean) )
-    \\        Dean > I can tell whenever a beautiful woman is in distress! Tell me fair lady, what distresses your beautiful heart so?
-    \\            @sendEvent(dean leans into grace)
-    \\            @goto dean_talk_to_grace
-    \\        @if( q.redRoomQuest.undiscoveredPhase.barkeeper_says_grace_knows_something )
-    \\        > Word is you know what happened in the red room last thursday.
-    \\            $: Her eyes droop sadly. 
-    \\            Grace: I- I- don't know what I saw. I can tell you but... it's complicated.
+    \\# [talk_to_grace; @once(grace)]
+    \\
+    \\[talk_to_grace]
+    \\$: She's hunched over her meal, barely making any effort to eat.
+    \\Grace: Huh?... Oh I'm sorry I didn't quite see you there.
+    \\[talk_to_grace_eating]
+    \\Grace: I guess I'm a bit distracted
+    \\    > Is everything alright? You're hardly eating.
+    \\        @end
+    \\    > Hear any interesting rumors?
+    \\        $: She sheepishly avoids your eye contact and resumes forking through her plate.
+    \\        Grace: Sorry... I don't really have any rumors. 
+    \\        : I'm just trying to eat here ok? # you can multiline text with ':' this will append it onto the previous line
+    \\        # there are no multiline comments.
+    \\        @goto talk_to_grace_eating
+    \\    @if( p.canParticiate(Dean) and p.party.contains(Dean) )
+    \\    > Dean: I can tell whenever a beautiful woman is in distress! Tell me fair lady, what distresses your beautiful heart so?
+    \\        @sendEvent(dean leans into grace)
+    \\        @goto dean_talk_to_grace
+    \\    @if( q.redRoomQuest.undiscoveredPhase.barkeeper_says_grace_knows_something )
+    \\    > Word is you know what happened in the red room last thursday.
+    \\        $: Her eyes droop sadly. 
+    \\        Grace: I- I- don't know what I saw. I can tell you but... it's complicated.
 ;
 
 const TokenDefinitions: []const []const u8 = &.{
@@ -464,12 +466,14 @@ pub const Tokenizer = struct {
     }
 
     fn pushToken(self: *@This(), token: []const u8, token_type: TokenType, meta: TokenMeta) !void {
-        try self.tokens.append(self.allocator, token);
         try self.token_types.append(self.allocator, token_type);
         try self.token_meta.append(self.allocator, meta);
 
         if (token_type == .NEWLINE) {
+            try self.tokens.append(self.allocator, "\\n");
             self.newline();
+        } else {
+            try self.tokens.append(self.allocator, token);
         }
     }
 

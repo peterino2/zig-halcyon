@@ -210,7 +210,11 @@ pub const StoryNodes = struct {
         return node;
     }
 
+    // this function calls the directive compiler.
     fn newDirectiveNodeFromUtf8(self: *Self, source: []const []const u8, alloc: std.mem.Allocator) !Node {
+        for (source) |src| {
+            ParserPrint("tokens: {s},\n", .{src});
+        }
         // you have access to start and end window here.
         var newString = try NodeString.fromUtf8(source[0], alloc);
         var node = Node{ .id = self.instances.items.len, .generation = 0 };
@@ -394,10 +398,21 @@ fn matchFunctionCallGeneric(slice: []const TokenType, data: anytype, functionNam
 
     if (!std.mem.eql(u8, data[1], functionName)) return false;
 
+    var parenCount: i32 = 0;
+
+    for (slice) |s| {
+        if (s == .L_PAREN) {
+            parenCount += 1;
+        }
+        if (s == .R_PAREN) {
+            parenCount -= 1;
+        }
+    }
+
     if (slice[0] == TokenType.AT and
         slice[1] == TokenType.LABEL and
         slice[2] == TokenType.L_PAREN and
-        slice[slice.len - 1] == TokenType.R_PAREN)
+        parenCount == 0)
     {
         return true;
     }
@@ -472,10 +487,21 @@ fn tokMatchElse(slice: []const TokenType, data: anytype) bool {
 fn tokMatchGenericDirective(slice: []const TokenType) bool {
     if (slice.len < 4) return false;
 
+    var parenCount: i32 = 0;
+
+    for (slice) |s| {
+        if (s == .L_PAREN) {
+            parenCount += 1;
+        }
+        if (s == .R_PAREN) {
+            parenCount -= 1;
+        }
+    }
+
     if (slice[0] == TokenType.AT and
         slice[1] == TokenType.LABEL and
         slice[2] == TokenType.L_PAREN and
-        slice[slice.len - 1] == TokenType.R_PAREN)
+        parenCount == 0)
     {
         return true;
     }
@@ -527,19 +553,6 @@ fn tokMatchComment(slice: []const TokenType) bool {
 
     if (slice[0] == TokenType.HASHTAG and
         slice[1] == TokenType.COMMENT)
-    {
-        return true;
-    }
-
-    return false;
-}
-
-fn tokMatchLabelDeclare(slice: []const TokenType) bool {
-    if (slice.len < 3) return false;
-
-    if (slice[0] == TokenType.L_SQBRACK and
-        slice[1] == TokenType.LABEL and
-        slice[2] == TokenType.R_SQBRACK)
     {
         return true;
     }
@@ -641,18 +654,19 @@ pub const NodeParser = struct {
     warnings: ArrayList(ParserWarningOrErrorInfo),
     filename: []const u8 = "__halcyon_no_file",
 
-    pub fn pushError(self: *Self, errorType: ParserWarningOrError, fmt: []const u8, args: anytype) !void {
-        _ = args;
-        _ = fmt;
+    pub fn pushError(self: *Self, errorType: ParserWarningOrError, comptime fmt: []const u8, args: anytype) !void {
         try self.errors.append(.{
             .errorUnion = errorType,
             .tokenWindow = self.currentTokenWindow,
             .fileName = self.filename,
             .lineNumber = self.lineNumber,
         });
+
+        std.debug.print("Parser Error encountered: " ++ fmt, args);
+        self.currentTokenWindow.startIndex = self.currentTokenWindow.endIndex;
     }
 
-    pub fn pushWarning(self: *Self, errorType: ParserWarningOrError, fmt: []const u8, args: anytype) !void {
+    pub fn pushWarning(self: *Self, errorType: ParserWarningOrError, comptime fmt: []const u8, args: anytype) !void {
         _ = args;
         _ = fmt;
         try self.warnings.append(.{
@@ -688,10 +702,21 @@ pub const NodeParser = struct {
 
         if (!std.mem.eql(u8, data[1], functionName)) return false;
 
+        var parenCount: i32 = 0;
+
+        for (slice) |s| {
+            if (s == .L_PAREN) {
+                parenCount += 1;
+            }
+            if (s == .R_PAREN) {
+                parenCount -= 1;
+            }
+        }
+
         if (slice[0] == TokenType.AT and
             slice[1] == TokenType.LABEL and
             slice[2] == TokenType.L_PAREN and
-            slice[slice.len - 1] == TokenType.R_PAREN)
+            parenCount == 0)
         {
             return true;
         }
@@ -730,6 +755,7 @@ pub const NodeParser = struct {
             .warnings = ArrayList(ParserWarningOrErrorInfo).init(alloc),
         };
 
+        rv.tokenizer.test_display();
         try rv.nodeLinkingRules.append(rv.makeLinkingRules(.{}));
         return rv;
     }
@@ -780,7 +806,7 @@ pub const NodeParser = struct {
 
                 if (rule.label) |label| {
                     std.debug.print("goto from {any} -> {s}\n", .{ rule.node, label });
-                    _ = try self.story.setLinkByLabel(rule.node, label);
+                    _ = self.story.setLinkByLabel(rule.node, label) catch {};
                 } else if (rule.explicit_goto) |goto| {
                     _ = try self.story.setLink(rule.node, goto);
                 }
@@ -872,6 +898,41 @@ pub const NodeParser = struct {
                 }
             }
         }
+    }
+
+    fn tokMatchLabelDeclare(self: *@This(), slice: []const TokenType) !bool {
+        if (slice.len < 3) return false;
+
+        if (slice[0] == TokenType.L_SQBRACK and
+            slice[1] == TokenType.LABEL and
+            slice[2] == TokenType.R_SQBRACK)
+        {
+            return true;
+        }
+
+        if (slice[0] == TokenType.L_SQBRACK and
+            slice[1] == TokenType.LABEL and
+            (slice[slice.len - 1] != TokenType.R_SQBRACK and slice[slice.len - 1] != TokenType.SPACE))
+        {
+            try self.pushError(
+                ParserWarningOrError.UnexpectedTokenError,
+                "Unexpected token in label: {s} expecting a square bracket",
+                .{std.enums.tagName(TokenType, slice[2]).?},
+            );
+        }
+        return false;
+    }
+
+    fn checkBaseErrors(self: *@This(), slice: []const TokenType) !bool {
+        if ((slice[0] == .R_SQBRACK)) {
+            try self.pushError(
+                ParserWarningOrError.UnexpectedTokenError,
+                "Unexpected token in label: {s}",
+                .{std.enums.tagName(TokenType, slice[0]).?},
+            );
+            return true;
+        }
+        return false;
     }
 
     pub fn DoParse(source: []const u8, alloc: std.mem.Allocator) !StoryNodes {
@@ -1011,7 +1072,7 @@ pub const NodeParser = struct {
                     shouldBreak = true;
                 }
             }
-            if (!shouldBreak and tokMatchLabelDeclare(tokenTypeSlice)) {
+            if (!shouldBreak and try self.tokMatchLabelDeclare(tokenTypeSlice)) {
                 ParserPrint("> Label declare {s}\n", .{dataSlice[1]});
                 if (self.story.tags.contains(dataSlice[1])) {
                     try self.pushWarning(ParserWarning.DuplicateLabelWarning, "duplicate label: {s}", .{dataSlice[1]});
@@ -1044,6 +1105,9 @@ pub const NodeParser = struct {
                 try self.addCurrentDialogueChoiceFromUtf8Content(dataSlice[dataSlice.len - 1], alloc);
                 shouldBreak = true;
             }
+
+            _ = try self.checkBaseErrors(tokenTypeSlice);
+
             if (!shouldBreak and tokenTypeSlice[0] == TokenType.NEWLINE) {
                 self.tabLevel = 0;
                 self.isNewLining = true;
@@ -1052,6 +1116,7 @@ pub const NodeParser = struct {
             if (shouldBreak) {
                 self.currentTokenWindow.startIndex = self.currentTokenWindow.endIndex;
             }
+
             if (self.currentTokenWindow.endIndex - self.currentTokenWindow.startIndex > 3 and self.currentTokenWindow.endIndex >= tokenTypes.items.len) {
                 ParserPrint("Unexpected end of file, parsing object from `{s}`", .{tokenData.items[self.currentTokenWindow.startIndex]});
                 return self.story;
@@ -1240,4 +1305,20 @@ test "manual simple storyNode" {
 test "init and deinit" {
     var x = StoryNodes.init(std.testing.allocator);
     defer x.deinit();
+}
+
+test "vm if statements" {
+    // A personal note,
+    // i fell like when it comes to parsers and their Ilk.
+    // Visualization and observability is incredibly important.
+
+    // This definitely feels like a task where I am spending far more time debugging
+    // than i am writing code.
+
+    // @if(PersonA.isPissedOff)
+    // expected to hit in match
+
+    var story = try NodeParser.DoParse(tokenizer.sampleData, std.testing.allocator);
+    defer story.deinit();
+    std.debug.print("\n", .{});
 }
