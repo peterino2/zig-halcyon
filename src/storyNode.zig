@@ -1,11 +1,11 @@
 const std = @import("std");
 const tokenizer = @import("tokenizer.zig");
-const fileHandler = @import("fileHandler.zig");
 
 const ArrayList = std.ArrayList;
 const AutoHashMap = std.AutoHashMap;
 const Tokenizer = tokenizer.Tokenizer;
-const TokenType = tokenizer.Tokenizer.TokenType;
+const Tokens = tokenizer.Tokens;
+const TokenType = tokenizer.TokenType;
 
 pub const storyStartLabel = "@__STORY_START__";
 pub const storyEndLabel = "@__STORY_END__";
@@ -345,7 +345,9 @@ pub const Interactor = struct {
         var currentChoiceIndex: usize = 0;
         var story = self.story;
 
-        while (self.node.id > 0) // the zero node is when it is done
+        var iterationCount: usize = 0;
+
+        while (self.node.id > 0 and iterationCount < 200000) // the zero node is when it is done
         {
             self.displayCurrentContent();
             if (self.isRecording) {
@@ -357,6 +359,7 @@ pub const Interactor = struct {
             } else if (story.nextNode.contains(self.node)) {
                 self.node = story.nextNode.get(self.node).?;
             }
+            iterationCount += 1;
         }
 
         if (self.isRecording) {
@@ -606,7 +609,7 @@ pub const ParserWarningOrErrorInfo = struct {
 pub const NodeParser = struct {
     const Self = @This();
 
-    tokenizer: Tokenizer,
+    tokenizer: Tokens,
     isParsing: bool = true,
     tabLevel: usize = 0,
     lineNumber: usize = 1,
@@ -702,7 +705,7 @@ pub const NodeParser = struct {
 
     pub fn MakeParser(source: []const u8, alloc: std.mem.Allocator) !Self {
         var rv = Self{
-            .tokenizer = try Tokenizer.MakeTokens(source, alloc),
+            .tokenizer = try Tokenizer.MakeTokens(source, alloc, .{ .debug = true }),
             .story = StoryNodes.init(alloc),
             .nodeLinkingRules = ArrayList(NodeLinkingRules).init(alloc),
             .lastLabel = "",
@@ -710,6 +713,8 @@ pub const NodeParser = struct {
             .errors = ArrayList(ParserWarningOrErrorInfo).init(alloc),
             .warnings = ArrayList(ParserWarningOrErrorInfo).init(alloc),
         };
+
+        rv.tokenizer.test_display();
 
         try rv.nodeLinkingRules.append(rv.makeLinkingRules(.{}));
         return rv;
@@ -872,6 +877,12 @@ pub const NodeParser = struct {
             const tokenTypeSlice = tokenTypes.items[self.currentTokenWindow.startIndex..self.currentTokenWindow.endIndex];
             const dataSlice = tokenData.items[self.currentTokenWindow.startIndex..self.currentTokenWindow.endIndex];
             //ParserPrint("current window: {s} `{s}`\n", .{ self.currentTokenWindow, dataSlice });
+
+            ParserPrint("=======================================\n", .{});
+            for (dataSlice, 0..) |tok, i| {
+                ParserPrint("[({any}) {s}]", .{ tokenTypeSlice[i], tok });
+            }
+            ParserPrint("\n=======================================\n", .{});
 
             var shouldBreak = false;
             if (!shouldBreak and tokMatchComment(tokenTypeSlice)) {
@@ -1077,7 +1088,7 @@ fn makeSimpleTestStory(alloc: std.mem.Allocator) !StoryNodes {
 
     // next node
     {
-        const choiceNodes: []Node = &.{
+        const choiceNodes: []const Node = &.{
             try story.newNodeWithContent("Cats", alloc),
             try story.newNodeWithContent("Dogs", alloc),
             try story.newNodeWithContent("Both", alloc),
