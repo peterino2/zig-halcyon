@@ -257,16 +257,25 @@ pub const Tokens = struct {
     allocator: std.mem.Allocator,
     tokens: std.ArrayListUnmanaged([]const u8),
     token_types: std.ArrayListUnmanaged(TokenType),
+    meta: std.ArrayListUnmanaged(TokenMeta),
 
     pub fn deinit(self: *@This()) void {
         self.tokens.deinit(self.allocator);
         self.token_types.deinit(self.allocator);
+        self.meta.deinit(self.allocator);
     }
 
     pub fn test_display(self: @This()) void {
         std.debug.print("tokens added: {d}\n", .{self.tokens.items.len});
         for (self.tokens.items, 0..) |value, i| {
-            std.debug.print("{d}: `{s}` {s}\n", .{ i, value, @tagName(self.token_types.items[i]) });
+            std.debug.print("{d}: `{s}` {s} {d}:{d}-{d}\n", .{
+                i,
+                value,
+                @tagName(self.token_types.items[i]),
+                self.meta.items[i].lineNumber,
+                self.meta.items[i].columnStart,
+                self.meta.items[i].columnEnd,
+            });
         }
     }
 };
@@ -282,10 +291,17 @@ const LineFeedType = enum {
     EOF,
 };
 
+pub const TokenMeta = struct {
+    lineNumber: u64 = 0,
+    columnStart: u64 = 0,
+    columnEnd: u64 = 0,
+};
+
 pub const Tokenizer = struct {
     allocator: std.mem.Allocator,
-    tokens: std.ArrayListUnmanaged([]const u8),
-    token_types: std.ArrayListUnmanaged(TokenType),
+    tokens: std.ArrayListUnmanaged([]const u8) = .{},
+    token_types: std.ArrayListUnmanaged(TokenType) = .{},
+    token_meta: std.ArrayListUnmanaged(TokenMeta) = .{},
 
     isTokenizing: bool = true,
     finalRun: bool = false,
@@ -298,7 +314,7 @@ pub const Tokenizer = struct {
     mode: ParserMode = ParserMode.default,
     shouldBreak: bool = false,
     collectingIdentifier: bool = false,
-    line: u64 = 0,
+    line: u64 = 1,
     column: u64 = 1,
     crlf_error_message_emitted: bool = false,
 
@@ -313,7 +329,7 @@ pub const Tokenizer = struct {
     }
 
     fn newline(self: *@This()) void {
-        self.lineNumber += 1;
+        self.line += 1;
         self.column = 1;
     }
 
@@ -346,13 +362,12 @@ pub const Tokenizer = struct {
 
         var self = @This(){
             .allocator = allocator,
-            .tokens = .{},
-            .token_types = .{},
             .opts = options,
             .source = targetData,
         };
         errdefer self.tokens.deinit(self.allocator);
         errdefer self.token_types.deinit(self.allocator);
+        errdefer self.token_meta.deinit(self.allocator);
 
         while (self.isTokenizing) {
             if (self.matchLineFeed() == .CRLF) {
@@ -360,9 +375,6 @@ pub const Tokenizer = struct {
             }
 
             if (self.matchLineFeed() != .EOF) {
-                if (self.startIndex + self.length + 1 >= self.source.len) {
-                    std.debug.print("What the actual fuck start:{d} len:{d} sourcelen:{d}\n", .{ self.startIndex, self.length, self.source.len });
-                }
                 self.sliceWithLatest = self.source[self.startIndex .. self.startIndex + self.length + 1];
                 self.slice = self.source[self.startIndex .. self.startIndex + self.length];
                 self.latestChar = self.source[self.startIndex + self.length];
@@ -386,6 +398,7 @@ pub const Tokenizer = struct {
 
             if (!self.shouldBreak) {
                 self.length += 1;
+                self.column += 1;
             }
         }
 
@@ -394,6 +407,7 @@ pub const Tokenizer = struct {
         return .{
             .tokens = self.tokens,
             .token_types = self.token_types,
+            .meta = self.token_meta,
             .allocator = allocator,
         };
     }
@@ -430,6 +444,7 @@ pub const Tokenizer = struct {
     }
 
     fn forward(self: *@This(), count: usize) !void {
+        self.column += count;
         self.startIndex = self.startIndex + count;
         self.length = 0;
         if (self.startIndex > self.source.len) {
@@ -448,14 +463,42 @@ pub const Tokenizer = struct {
         try self.forward(self.length);
     }
 
-    fn pushToken(self: *@This(), token: []const u8, token_type: TokenType) !void {
+    fn pushToken(self: *@This(), token: []const u8, token_type: TokenType, meta: TokenMeta) !void {
         try self.tokens.append(self.allocator, token);
         try self.token_types.append(self.allocator, token_type);
+        try self.token_meta.append(self.allocator, meta);
+
+        if (token_type == .NEWLINE) {
+            self.newline();
+        }
     }
 
     fn pushAndAdvance(self: *@This(), token_type: TokenType) !void {
-        try self.pushToken(self.slice, token_type);
+        try self.pushToken(self.slice, token_type, self.getTokenMeta());
         try self.advance();
+    }
+
+    fn getTokenMetaLatest(self: @This()) TokenMeta {
+        return .{
+            .lineNumber = self.line,
+            .columnStart = self.column + 2 - self.sliceWithLatest.len,
+            .columnEnd = self.column + 1,
+        };
+    }
+
+    fn getTokenMeta(self: @This()) TokenMeta {
+        return .{
+            .lineNumber = self.line,
+            .columnStart = self.column + 1 - self.slice.len,
+            .columnEnd = self.column,
+        };
+    }
+    fn getTokenMetaSingle(self: @This()) TokenMeta {
+        return .{
+            .lineNumber = self.line,
+            .columnStart = self.column,
+            .columnEnd = self.column,
+        };
     }
 
     fn unexpectedToken(self: *@This(), expected: []const u8) !void {
@@ -472,33 +515,32 @@ pub const Tokenizer = struct {
                 self.collectingIdentifier = false;
             }
             if (!self.shouldBreak and (self.matchLineFeed() != .None)) {
-                try self.pushToken(self.sliceWithLatest, .LABEL);
+                try self.pushToken(self.sliceWithLatest, .LABEL, self.getTokenMetaLatest());
                 self.collectingIdentifier = false;
+                try self.forward(1);
             }
         }
 
         if (!self.shouldBreak and self.latestChar == '#') {
-            try self.pushToken(self.sliceWithLatest, .HASHTAG);
+            try self.pushToken(self.sliceWithLatest, .HASHTAG, self.getTokenMetaLatest());
             try self.advance();
             try self.forward(1);
             try self.switchMode(.comment);
         }
 
         if (!self.shouldBreak and self.latestChar == ':') {
-            try self.pushAndAdvance(.COLON);
-            try self.forward(1);
+            try self.pushAndAdvanceNewest(.COLON);
             try self.switchMode(.text);
         }
 
         if (!self.shouldBreak and self.latestChar == '>') {
-            try self.pushAndAdvance(.R_ANGLE);
-            try self.forward(1);
+            try self.pushAndAdvanceNewest(.R_ANGLE);
             try self.switchMode(.text);
         }
 
         inline for (TokenDefinitions, 0..) |tok, i| {
             if (!self.shouldBreak and std.mem.eql(u8, self.sliceWithLatest, tok)) {
-                try self.pushToken(self.sliceWithLatest, @as(TokenType, @enumFromInt(i)));
+                try self.pushToken(self.sliceWithLatest, @as(TokenType, @enumFromInt(i)), self.getTokenMetaLatest());
                 try self.advance();
                 try self.forward(1);
             }
@@ -532,12 +574,15 @@ pub const Tokenizer = struct {
 
         var strippedTextSlice = self.slice[textSliceStart .. textSliceEnd + 1];
 
-        try self.pushToken(strippedTextSlice, .STORY_TEXT);
+        var meta = self.getTokenMeta();
+        meta.columnStart += textSliceStart;
+        meta.columnEnd -= textSliceEnd;
+        try self.pushToken(strippedTextSlice, .STORY_TEXT, meta);
         try self.advance();
     }
 
     fn pushAndAdvanceNewest(self: *@This(), token_type: TokenType) !void {
-        try self.pushToken(self.sliceWithLatest, token_type);
+        try self.pushToken(self.sliceWithLatest, token_type, self.getTokenMetaLatest());
         try self.advance();
         try self.forward(1);
     }
@@ -559,7 +604,7 @@ pub const Tokenizer = struct {
                 std.debug.print("comment detected, switching mode: ", .{});
             }
             try self.pushAndAdvance(.STORY_TEXT);
-            try self.pushToken(self.source[self.startIndex .. self.startIndex + 1], .HASHTAG);
+            try self.pushToken(self.source[self.startIndex .. self.startIndex + 1], .HASHTAG, self.getTokenMetaSingle());
             try self.advance();
             try self.switchMode(.comment);
         }
@@ -567,11 +612,10 @@ pub const Tokenizer = struct {
         if (self.shouldBreak) {
             if (std.mem.endsWith(u8, self.slice, "#")) {
                 try self.switchMode(.comment);
-                try self.tokens.append(self.allocator, "#");
-                try self.token_types.append(self.allocator, TokenType.HASHTAG);
+                try self.pushToken("#", .HASHTAG, self.getTokenMetaSingle());
             } else if (self.matchLineFeed() != .None) {
-                try self.tokens.append(self.allocator, "\n");
-                try self.token_types.append(self.allocator, TokenType.NEWLINE);
+                //var tokenMeta = self.getTokenMetaSingle();
+                //try self.pushToken("\\n", .NEWLINE, tokenMeta);
             }
         }
     }

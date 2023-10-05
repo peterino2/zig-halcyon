@@ -12,6 +12,23 @@ pub const storyEndLabel = "@__STORY_END__";
 const assert = std.debug.assert;
 const ParserPrint = std.debug.print;
 
+fn dummyPrint(comptime fmt: []const u8, args: anytype) void {
+    _ = args;
+    _ = fmt;
+}
+
+fn addJsonField_String(field: []const u8, comptime fmt: []const u8, args: anytype) void {
+    ParserPrint("\"{s}\": \"", .{field});
+    ParserPrint(fmt, args);
+    ParserPrint("\",", .{});
+}
+
+fn addJsonField_String_end(field: []const u8, comptime fmt: []const u8, args: anytype) void {
+    ParserPrint("\"{s}\": \"", .{field});
+    ParserPrint(fmt, args);
+    ParserPrint("\"", .{});
+}
+
 pub const ParserWarningOrError = ParserError || ParserWarning || StoryNodesError;
 pub const StoryNodesError = error{ InstancesNotExistError, GeneralError };
 
@@ -211,7 +228,6 @@ pub const StoryNodes = struct {
     }
 
     pub fn setLabel(self: *Self, id: Node, label: []const u8) !void {
-        //ParserPrint("SettingLabel  {s}!!\n\n", .{label});
         if (self.tags.contains(label)) {
             return ParserWarning.DuplicateLabelWarning;
         }
@@ -876,17 +892,22 @@ pub const NodeParser = struct {
             _ = tokenType;
             const tokenTypeSlice = tokenTypes.items[self.currentTokenWindow.startIndex..self.currentTokenWindow.endIndex];
             const dataSlice = tokenData.items[self.currentTokenWindow.startIndex..self.currentTokenWindow.endIndex];
-            //ParserPrint("current window: {s} `{s}`\n", .{ self.currentTokenWindow, dataSlice });
 
-            ParserPrint("=======================================\n", .{});
+            ParserPrint("[", .{});
             for (dataSlice, 0..) |tok, i| {
-                ParserPrint("[({any}) {s}]", .{ tokenTypeSlice[i], tok });
+                ParserPrint("{{", .{});
+                addJsonField_String("type", "{any}", .{tokenTypeSlice[i]});
+                addJsonField_String_end("value", "{s}", .{tok});
+                ParserPrint("}}", .{});
+                if (i != dataSlice.len - 1) {
+                    ParserPrint(",", .{});
+                }
             }
-            ParserPrint("\n=======================================\n", .{});
+            ParserPrint("]\n", .{});
 
             var shouldBreak = false;
             if (!shouldBreak and tokMatchComment(tokenTypeSlice)) {
-                ParserPrint(" comment (not a real node) latsNode = {d}\n", .{self.lastNode.id});
+                ParserPrint(" comment (not a real node) lastNode = {d}\n", .{self.lastNode.id});
                 shouldBreak = true;
             }
             if (!shouldBreak and tokMatchSet(tokenTypeSlice, dataSlice)) {
