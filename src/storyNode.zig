@@ -721,7 +721,7 @@ pub const NodeParser = struct {
 
     pub fn MakeParser(source: []const u8, alloc: std.mem.Allocator) !Self {
         var rv = Self{
-            .tokenizer = try Tokenizer.MakeTokens(source, alloc, .{ .debug = true }),
+            .tokenizer = try Tokenizer.MakeTokens(source, alloc, .{ .debug = false }),
             .story = StoryNodes.init(alloc),
             .nodeLinkingRules = ArrayList(NodeLinkingRules).init(alloc),
             .lastLabel = "",
@@ -729,8 +729,6 @@ pub const NodeParser = struct {
             .errors = ArrayList(ParserWarningOrErrorInfo).init(alloc),
             .warnings = ArrayList(ParserWarningOrErrorInfo).init(alloc),
         };
-
-        rv.tokenizer.test_display();
 
         try rv.nodeLinkingRules.append(rv.makeLinkingRules(.{}));
         return rv;
