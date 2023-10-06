@@ -8,6 +8,7 @@ const AutoHashMapUnmanaged = std.AutoHashMapUnmanaged;
 const Tokenizer = tokenizer.Tokenizer;
 const Tokens = tokenizer.Tokens;
 const TokenType = tokenizer.TokenType;
+const TokenMeta = tokenizer.TokenMeta;
 
 pub const storyStartLabel = "@__STORY_START__";
 pub const storyEndLabel = "@__STORY_END__";
@@ -39,6 +40,8 @@ const ParserError = error{
     GeneralParserError,
     UnexpectedTokenError,
     NoNextNodeError,
+    MalformedDirective,
+    DirectiveCompilerError,
 };
 
 const ParserWarning = error{
@@ -103,6 +106,12 @@ pub const NodeString = struct {
     pub fn asUtf8Native(self: @This()) ![]const u8 {
         return self.string.items;
     }
+};
+
+const TokenView = struct {
+    tokens: []const []const u8,
+    types: []const TokenType,
+    meta: []const TokenMeta,
 };
 
 pub const NodeStringView = []const u8;
@@ -210,19 +219,6 @@ pub const StoryNodes = struct {
         if (node.id == 1) {
             try self.setLabel(node, storyStartLabel);
         }
-        return node;
-    }
-
-    // this function calls the directive compiler.
-    fn newDirectiveNodeFromUtf8(self: *@This(), source: []const []const u8, alloc: std.mem.Allocator) !Node {
-        for (source) |src| {
-            ParserPrint("tokens: {s},\n", .{src});
-        }
-        // you have access to start and end window here.
-        var newString = try NodeString.fromUtf8(source[0], alloc);
-        var node = Node{ .id = self.instances.items.len, .generation = 0 };
-
-        try self.pushNode(newString, node, false);
         return node;
     }
 
@@ -483,31 +479,6 @@ fn tokMatchElse(slice: []const TokenType, data: anytype) bool {
     return false;
 }
 
-fn tokMatchGenericDirective(slice: []const TokenType) bool {
-    if (slice.len < 4) return false;
-
-    var parenCount: i32 = 0;
-
-    for (slice) |s| {
-        if (s == .L_PAREN) {
-            parenCount += 1;
-        }
-        if (s == .R_PAREN) {
-            parenCount -= 1;
-        }
-    }
-
-    if (slice[0] == TokenType.AT and
-        slice[1] == TokenType.LABEL and
-        slice[2] == TokenType.L_PAREN and
-        parenCount == 0)
-    {
-        return true;
-    }
-
-    return false;
-}
-
 fn tokMatchTabSpace(slice: []const TokenType, data: anytype) bool {
     if (slice.len < 4) return false;
     var i: u32 = 0;
@@ -690,38 +661,6 @@ pub const NodeParser = struct {
         try self.finishCreatingNode(node, rules);
     }
 
-    fn matchFunctionCallGeneric(slice: []const TokenType, data: anytype, functionName: []const u8) bool {
-        if (slice.len < 4) return false;
-
-        if (data.len != slice.len) {
-            std.debug.print("something is really wrong\n", .{});
-            return false;
-        }
-
-        if (!std.mem.eql(u8, data[1], functionName)) return false;
-
-        var parenCount: i32 = 0;
-
-        for (slice) |s| {
-            if (s == .L_PAREN) {
-                parenCount += 1;
-            }
-            if (s == .R_PAREN) {
-                parenCount -= 1;
-            }
-        }
-
-        if (slice[0] == TokenType.AT and
-            slice[1] == TokenType.LABEL and
-            slice[2] == TokenType.L_PAREN and
-            parenCount == 0)
-        {
-            return true;
-        }
-
-        return false;
-    }
-
     fn finishCreatingNode(self: *@This(), node: Node, params: NodeLinkingRules) !void {
         self.lastNode = node;
 
@@ -898,6 +837,42 @@ pub const NodeParser = struct {
         }
     }
 
+    fn tokMatchGenericDirective(self: *@This(), slice: []const TokenType) !bool {
+        if (slice.len < 2) return false;
+
+        if (slice[0] == .AT and slice[1] != .L_PAREN) {
+            try self.pushError(
+                ParserError.MalformedDirective,
+                "Unexpected token {s}, expected label after directive invocation @",
+                .{@tagName(slice[1])},
+            );
+            return false;
+        }
+
+        if (slice.len < 4) return false;
+
+        var parenCount: i32 = 0;
+
+        for (slice) |s| {
+            if (s == .L_PAREN) {
+                parenCount += 1;
+            }
+            if (s == .R_PAREN) {
+                parenCount -= 1;
+            }
+        }
+
+        if (slice[0] == TokenType.AT and
+            slice[1] == TokenType.LABEL and
+            slice[2] == TokenType.L_PAREN and
+            parenCount == 0)
+        {
+            return true;
+        }
+
+        return false;
+    }
+
     fn tokMatchLabelDeclare(self: *@This(), slice: []const TokenType) !bool {
         if (slice.len < 3) return false;
 
@@ -921,6 +896,37 @@ pub const NodeParser = struct {
         return false;
     }
 
+    // this function calls the directive compiler.
+    fn newDirectiveNodeFromUtf8(
+        self: *@This(),
+        allocator: std.mem.Allocator,
+        view: TokenView,
+    ) !Node {
+
+        // try to compile the codeblock inside the directive
+        switch (view.types[1]) {
+            .LABEL => {},
+            else => {
+                try self.pushError(
+                    ParserWarningOrError.MalformedDirective,
+                    "Malformed directive at line {d}: col{d}",
+                    .{
+                        view.meta[1].lineNumber,
+                        view.meta[1].columnStart,
+                    },
+                );
+
+                return error.MalformedDirective;
+            },
+        }
+
+        // you have access to start and end window here.
+        var newString = try NodeString.fromUtf8(view.tokens[0], allocator);
+        var node = Node{ .id = self.story.instances.items.len, .generation = 0 };
+        try self.story.pushNode(newString, node, false);
+        return node;
+    }
+
     fn checkBaseErrors(self: *@This(), slice: []const TokenType) !bool {
         if ((slice[0] == .R_SQBRACK)) {
             try self.pushError(
@@ -933,8 +939,15 @@ pub const NodeParser = struct {
         return false;
     }
 
-    pub fn DoParse(source: []const u8, alloc: std.mem.Allocator) !StoryNodes {
+    pub fn DoParse(
+        alloc: std.mem.Allocator,
+        source: []const u8,
+        opts: struct {
+            filename: []const u8 = "__halcyon_no_file",
+        },
+    ) !StoryNodes {
         var self = try @This().MakeParser(source, alloc);
+        self.filename = opts.filename;
         defer self.deinit();
 
         const tokenTypes = self.tokenizer.token_types;
@@ -950,6 +963,11 @@ pub const NodeParser = struct {
             const tokenTypeSlice = tokenTypes.items[self.currentTokenWindow.startIndex..self.currentTokenWindow.endIndex];
             const dataSlice = tokenData.items[self.currentTokenWindow.startIndex..self.currentTokenWindow.endIndex];
 
+            const tokenView: TokenView = .{
+                .tokens = dataSlice,
+                .types = tokenTypeSlice,
+                .meta = self.tokenizer.meta.items[self.currentTokenWindow.startIndex..self.currentTokenWindow.endIndex],
+            };
             if (false) {
                 ParserPrint("[", .{});
                 for (dataSlice, 0..) |tok, i| {
@@ -972,7 +990,7 @@ pub const NodeParser = struct {
             if (!shouldBreak and tokMatchSet(tokenTypeSlice, dataSlice)) {
                 nodesCount += 1;
                 ParserPrint("{d}: Set var\n", .{nodesCount});
-                const node = try self.story.newDirectiveNodeFromUtf8(dataSlice, alloc);
+                const node = try self.newDirectiveNodeFromUtf8(alloc, tokenView);
                 try self.story.setTextContentFromSlice(node, "Set var");
                 try self.finishCreatingNode(node, self.makeLinkingRules(node));
                 shouldBreak = true;
@@ -1019,7 +1037,7 @@ pub const NodeParser = struct {
                 nodesCount += 1;
 
                 ParserPrint("{d}: If block start\n", .{nodesCount});
-                const node = try self.story.newDirectiveNodeFromUtf8(dataSlice, alloc);
+                const node = try self.newDirectiveNodeFromUtf8(alloc, tokenView);
                 try self.story.conditionalBlock.put(self.allocator, node, .{});
                 try self.story.setTextContentFromSlice(node, "If block");
                 try self.finishCreatingNode(node, self.makeLinkingRules(node));
@@ -1035,17 +1053,17 @@ pub const NodeParser = struct {
             }
             if (!shouldBreak and tokMatchVarsBlock(tokenTypeSlice, dataSlice)) {
                 nodesCount += 1;
-                const node = try self.story.newDirectiveNodeFromUtf8(dataSlice, alloc);
+                const node = try self.newDirectiveNodeFromUtf8(alloc, tokenView);
                 try self.story.setTextContentFromSlice(node, "Vars block");
                 try self.finishCreatingNode(node, self.makeLinkingRules(node));
                 ParserPrint("{d}: Vars block\n", .{nodesCount});
                 shouldBreak = true;
             }
-            if (!shouldBreak and tokMatchGenericDirective(tokenTypeSlice)) {
+            if (!shouldBreak and try self.tokMatchGenericDirective(tokenTypeSlice)) {
                 nodesCount += 1;
                 const max = @min(10, dataSlice.len);
                 ParserPrint("{d}: Generic Directive: {s}\n", .{ nodesCount, dataSlice[0..max] });
-                const node = try self.story.newDirectiveNodeFromUtf8(dataSlice, alloc);
+                const node = try self.newDirectiveNodeFromUtf8(alloc, tokenView);
                 try self.story.setTextContentFromSlice(node, "Generic Directive");
                 try self.finishCreatingNode(node, self.makeLinkingRules(node));
                 shouldBreak = true;
@@ -1116,7 +1134,23 @@ pub const NodeParser = struct {
             }
 
             if (self.currentTokenWindow.endIndex - self.currentTokenWindow.startIndex > 3 and self.currentTokenWindow.endIndex >= tokenTypes.items.len) {
-                ParserPrint("Unexpected end of file, parsing object from `{s}`", .{tokenData.items[self.currentTokenWindow.startIndex]});
+                const meta = self.tokenizer.meta.items[self.currentTokenWindow.startIndex];
+
+                ParserPrint("\n\n=====================\nERROR > {s}\n", .{GetSourceNear(source, meta.sourceIndex)});
+
+                var i: u32 = 0;
+                while (i < meta.columnStart) : (i += 1) {
+                    ParserPrint(" ", .{});
+                }
+                ParserPrint(" ------^\n", .{});
+
+                ParserPrint("Unexpected end of file, parsing object from `{s}`\n in {s} line {d}:{d}\n", .{
+                    tokenData.items[self.currentTokenWindow.startIndex],
+                    self.filename,
+                    meta.lineNumber,
+                    meta.columnStart,
+                });
+
                 return self.story;
             }
             if (self.currentTokenWindow.endIndex == tokenTypes.items.len) {
@@ -1133,6 +1167,24 @@ pub const NodeParser = struct {
         return self.story;
     }
 };
+
+pub fn GetSourceNear(source: []const u8, index: u64) []const u8 {
+    // walk backwards from the index until we find a newline or 0
+    var start: u64 = index;
+    while (start > 0 and source[start] != '\n') {
+        start -= 1;
+    }
+
+    if (source[start] == '\n')
+        start += 1;
+
+    var end = index;
+    while (source[end] != '\n' and end < source.len) {
+        end += 1;
+    }
+
+    return source[start..end];
+}
 
 // ========================= Testing =========================
 fn makeSimpleTestStory(alloc: std.mem.Allocator) !StoryNodes {
@@ -1196,7 +1248,7 @@ fn makeSimpleTestStory(alloc: std.mem.Allocator) !StoryNodes {
 }
 
 test "parse with nodes" {
-    var story = try NodeParser.DoParse(tokenizer.easySampleData, std.testing.allocator);
+    var story = try NodeParser.DoParse(std.testing.allocator, tokenizer.easySampleData, .{});
     defer story.deinit();
     // try testChoicesList(story, &.{0,0,0,0}, std.testing.allocator);
 
@@ -1210,7 +1262,7 @@ test "parse with nodes" {
 }
 
 test "parse simplest with no-conditionals" {
-    var story = try NodeParser.DoParse(tokenizer.simplest_v1, std.testing.allocator);
+    var story = try NodeParser.DoParse(std.testing.allocator, tokenizer.simplest_v1, .{});
     defer story.deinit();
     // try testChoicesList(story, &.{0,0,0,0}, std.testing.allocator);
 
@@ -1266,7 +1318,7 @@ fn testChoicesList(story: StoryNodes, choicesList: []const usize, alloc: std.mem
 
 test "parsed simple storyNode" {
     const alloc = std.testing.allocator;
-    var story = try NodeParser.DoParse(tokenizer.simplest_v1, std.testing.allocator);
+    var story = try NodeParser.DoParse(std.testing.allocator, tokenizer.simplest_v1, .{});
     defer story.deinit();
     {
         std.debug.print("\nPath 1 test -----\n", .{});
@@ -1316,7 +1368,7 @@ test "vm if statements" {
     // @if(PersonA.isPissedOff)
     // expected to hit in match
 
-    var story = try NodeParser.DoParse(tokenizer.sampleData, std.testing.allocator);
+    var story = try NodeParser.DoParse(std.testing.allocator, tokenizer.sampleData, .{ .filename = "tokenizer.sampleData" });
     defer story.deinit();
     std.debug.print("\n", .{});
 }

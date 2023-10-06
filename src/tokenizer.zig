@@ -133,6 +133,7 @@ pub const easySampleData =
 pub const sampleData =
     \\# this is testing the comments at the start
     \\[hello]
+    \\@@shouldignorethisdirective
     \\@if(PersonA.isPissedOff)
     \\PersonA: Can you flip off? # testing comment inline
     \\@else
@@ -297,6 +298,7 @@ pub const TokenMeta = struct {
     lineNumber: u64 = 0,
     columnStart: u64 = 0,
     columnEnd: u64 = 0,
+    sourceIndex: u64 = 0,
 };
 
 pub const Tokenizer = struct {
@@ -487,6 +489,7 @@ pub const Tokenizer = struct {
             .lineNumber = self.line,
             .columnStart = self.column + 2 - self.sliceWithLatest.len,
             .columnEnd = self.column + 1,
+            .sourceIndex = self.startIndex,
         };
     }
 
@@ -495,6 +498,7 @@ pub const Tokenizer = struct {
             .lineNumber = self.line,
             .columnStart = self.column + 1 - self.slice.len,
             .columnEnd = self.column,
+            .sourceIndex = self.startIndex,
         };
     }
     fn getTokenMetaSingle(self: @This()) TokenMeta {
