@@ -113,20 +113,13 @@ pub const NodeData = struct {
         textContent: NodeString,
     },
     passThrough: bool,
-
-    pub fn init(node: Node, content: NodeString, passThrough: bool) @This() {
-        var self = @This(){
-            .node = node,
-            .content = .{ .textContent = content },
-            .passThrough = passThrough,
-        };
-        return self;
-    }
 };
 
 pub const StoryNodes = struct {
-    allocator: std.mem.Allocator,
-    nodes: std.ArrayListUnmanaged(NodeData) = .{},
+    instances: ArrayList(Node),
+    textContent: ArrayList(NodeString),
+    passThrough: ArrayList(bool),
+
     speakerName: AutoHashMap(Node, NodeString),
     conditionalBlock: AutoHashMap(Node, BranchNode),
     choices: AutoHashMap(Node, ArrayList(Node)),
@@ -142,15 +135,16 @@ pub const StoryNodes = struct {
         // should actually group nextNode, explicitLinks and all future link based data into an enum or struct.
         // that's a pretty important refactor we should do
         var rv = @This(){
+            .instances = ArrayList(Node).initCapacity(allocator, 0xffff) catch unreachable,
+            .textContent = ArrayList(NodeString).initCapacity(allocator, 0xffff) catch unreachable,
+            .passThrough = ArrayList(bool).init(allocator),
             .speakerName = AutoHashMap(Node, NodeString).init(allocator),
             .choices = AutoHashMap(Node, ArrayList(Node)).init(allocator),
             .nextNode = AutoHashMap(Node, Node).init(allocator),
             .tags = std.StringHashMap(Node).init(allocator),
             .conditionalBlock = AutoHashMap(Node, BranchNode).init(allocator),
             .hasExplicitLink = AutoHashMap(Node, void).init(allocator),
-            .allocator = allocator,
         };
-        rv.nodes.initCapacity(allocator, 0xfff) catch unreachable;
         var node = rv.newNodeWithContent("@__STORY_END__", allocator) catch unreachable;
         rv.setLabel(node, "@__STORY_END__") catch unreachable;
         return rv;
@@ -161,41 +155,26 @@ pub const StoryNodes = struct {
         var writer = ostr.writer();
 
         try writer.print("digraph G {{\n", .{});
-        for (self.nodes.items) |n| {
-            try writer.print("n{d} [label=\"{any}\"]\n", .{ n.node.id, n.content });
+        for (self.instances.items, 0..) |n, i| {
+            _ = i;
+            _ = n;
+            try writer.print("\"\"", .{});
         }
-
-        for (self.nodes.items) |n| {
-            try writer.print("n{d} -> n{d}\n", .{
-                n.node.id,
-                (self.nextNode.get(n.node) orelse .{}).id,
-            });
-
-            if (self.choices.contains(n.node)) {
-                const list = self.choices.get(n.node).?;
-                try writer.print("n{d} -- {{", .{n.node.id});
-                for (list.items) |choice| {
-                    try writer.print("n{d} ", .{choice.id});
-                }
-                try writer.print("}}\n", .{n.node.id});
-            }
-        }
-        try writer.print("}}\n", .{});
+        try writer.print("digraph G }}\n", .{});
     }
 
     pub fn deinit(self: *@This()) void {
+        self.instances.deinit();
+        self.passThrough.deinit();
+        self.hasExplicitLink.deinit();
         self.conditionalBlock.deinit();
         {
             var i: usize = 0;
-            while (i < self.nodes.items.len) {
-                switch (self.nodes.items[i].content) {
-                    .textContent => |textContent| {
-                        textContent.deinit();
-                    },
-                }
+            while (i < self.textContent.items.len) {
+                self.textContent.items[i].deinit();
                 i += 1;
             }
-            self.nodes.deinit();
+            self.textContent.deinit();
         }
 
         {
@@ -218,26 +197,22 @@ pub const StoryNodes = struct {
 
         self.nextNode.deinit();
         self.tags.deinit();
-        self.nodes.deinit(self.allocator);
     }
 
     pub fn newNodeWithContent(self: *@This(), content: []const u8, alloc: std.mem.Allocator) !Node {
         var newString = try NodeString.fromUtf8(content, alloc);
-        var id = self.nodes.items.len - 1;
-
-        var nodeData: NodeData = .{
-            .node = .{
-                .id = id,
-                .generation = 0, // todo..
-            },
-            .textContent = newString,
-            .passThrough = false,
+        try self.textContent.append(newString);
+        var node = Node{
+            .id = self.textContent.items.len - 1,
+            .generation = 0, // todo..
         };
+        try self.instances.append(node);
+        try self.passThrough.append(false);
 
-        if (nodeData.node.id == 1) {
-            try self.setLabel(nodeData.node, storyStartLabel);
+        if (node.id == 1) {
+            try self.setLabel(node, storyStartLabel);
         }
-        return nodeData.node;
+        return node;
     }
 
     // this function calls the directive compiler.
@@ -248,7 +223,6 @@ pub const StoryNodes = struct {
         // you have access to start and end window here.
         var newString = try NodeString.fromUtf8(source[0], alloc);
         var node = Node{ .id = self.instances.items.len, .generation = 0 };
-
         try self.textContent.append(newString);
         try self.instances.append(node);
         try self.passThrough.append(false);
@@ -282,7 +256,6 @@ pub const StoryNodes = struct {
         if (self.findNodeByLabel(label)) |next| {
             try self.nextNode.put(id, next);
             try self.hasExplicitLink.put(id, void{});
-            return next;
         }
     }
 
@@ -1347,7 +1320,5 @@ test "vm if statements" {
 
     var story = try NodeParser.DoParse(tokenizer.sampleData, std.testing.allocator);
     defer story.deinit();
-    var graphviz = try story.dumpGraphviz();
-    defer graphviz.deinit();
-    std.debug.print("{s}\n", .{graphviz.items});
+    std.debug.print("\n", .{});
 }
