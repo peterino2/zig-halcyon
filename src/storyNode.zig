@@ -12,6 +12,7 @@ pub const storyEndLabel = "@__STORY_END__";
 const assert = std.debug.assert;
 const ParserPrint = std.debug.print;
 
+// set ParserPrint to this thing to disable all printing.
 fn dummyPrint(comptime fmt: []const u8, args: anytype) void {
     _ = args;
     _ = fmt;
@@ -51,14 +52,12 @@ pub const LocKey = struct {
     key: u32,
     keyName: ArrayList(u8),
 
-    const Self = @This();
-
     // generates a new localization id with a random value (todo)
     pub fn newAutoKey(alloc: std.mem.Allocator) !LocKey {
         return LocKey{ .key = 0, .keyName = ArrayList(u8).init(alloc) };
     }
 
-    pub fn deinit(self: *Self) void {
+    pub fn deinit(self: *@This()) void {
         self.keyName.deinit();
     }
 };
@@ -67,21 +66,19 @@ pub const NodeString = struct {
     string: ArrayList(u8),
     locKey: LocKey,
 
-    const Self = @This();
-
-    pub fn initAuto(alloc: std.mem.Allocator) Self {
+    pub fn initAuto(alloc: std.mem.Allocator) @This() {
         return NodeString{
             .string = try ArrayList(u8).init(alloc),
             .locKey = LocKey.newAutoKey(alloc),
         };
     }
 
-    pub fn deinit(self: *Self) void {
+    pub fn deinit(self: *@This()) void {
         self.string.deinit();
         self.locKey.deinit();
     }
 
-    pub fn setUtf8NativeText(self: *Self, text: []const u8) *Self {
+    pub fn setUtf8NativeText(self: *@This(), text: []const u8) *@This() {
         if (self.string.items.len > 0) {
             try self.string.clearAndFree();
         }
@@ -101,7 +98,7 @@ pub const NodeString = struct {
     }
 
     // returns the native text
-    pub fn asUtf8Native(self: Self) ![]const u8 {
+    pub fn asUtf8Native(self: @This()) ![]const u8 {
         return self.string.items;
     }
 };
@@ -116,60 +113,89 @@ pub const NodeData = struct {
         textContent: NodeString,
     },
     passThrough: bool,
+
+    pub fn init(node: Node, content: NodeString, passThrough: bool) @This() {
+        var self = @This(){
+            .node = node,
+            .content = .{ .textContent = content },
+            .passThrough = passThrough,
+        };
+        return self;
+    }
 };
 
 pub const StoryNodes = struct {
-    instances: ArrayList(Node),
-    textContent: ArrayList(NodeString),
-    passThrough: ArrayList(bool),
-
-    nodes: ArrayList(NodeData),
-
+    allocator: std.mem.Allocator,
+    nodes: std.ArrayListUnmanaged(NodeData) = .{},
     speakerName: AutoHashMap(Node, NodeString),
     conditionalBlock: AutoHashMap(Node, BranchNode),
     choices: AutoHashMap(Node, ArrayList(Node)),
     nextNode: AutoHashMap(Node, Node),
-    explicitLink: AutoHashMap(Node, void),
+    hasExplicitLink: AutoHashMap(Node, void),
     tags: std.StringHashMap(Node),
 
-    const Self = @This();
-
-    pub fn getNullNode(self: Self) Node {
+    pub fn getNullNode(self: @This()) Node {
         return self.instances.items[0];
     }
 
-    pub fn init(allocator: std.mem.Allocator) Self {
+    pub fn init(allocator: std.mem.Allocator) @This() {
         // should actually group nextNode, explicitLinks and all future link based data into an enum or struct.
         // that's a pretty important refactor we should do
-        var rv = Self{
-            .instances = ArrayList(Node).initCapacity(allocator, 0xffff) catch unreachable,
-            .textContent = ArrayList(NodeString).initCapacity(allocator, 0xffff) catch unreachable,
-            .passThrough = ArrayList(bool).init(allocator),
+        var rv = @This(){
             .speakerName = AutoHashMap(Node, NodeString).init(allocator),
             .choices = AutoHashMap(Node, ArrayList(Node)).init(allocator),
             .nextNode = AutoHashMap(Node, Node).init(allocator),
             .tags = std.StringHashMap(Node).init(allocator),
             .conditionalBlock = AutoHashMap(Node, BranchNode).init(allocator),
-            .explicitLink = AutoHashMap(Node, void).init(allocator),
-            .nodes = ArrayList(NodeData).init(allocator),
+            .hasExplicitLink = AutoHashMap(Node, void).init(allocator),
+            .allocator = allocator,
         };
+        rv.nodes.initCapacity(allocator, 0xfff) catch unreachable;
         var node = rv.newNodeWithContent("@__STORY_END__", allocator) catch unreachable;
         rv.setLabel(node, "@__STORY_END__") catch unreachable;
         return rv;
     }
 
-    pub fn deinit(self: *Self) void {
-        self.instances.deinit();
-        self.passThrough.deinit();
-        self.explicitLink.deinit();
+    pub fn dumpGraphviz(self: *@This()) !ArrayList(u8) {
+        var ostr = ArrayList(u8).init(self.allocator);
+        var writer = ostr.writer();
+
+        try writer.print("digraph G {{\n", .{});
+        for (self.nodes.items) |n| {
+            try writer.print("n{d} [label=\"{any}\"]\n", .{ n.node.id, n.content });
+        }
+
+        for (self.nodes.items) |n| {
+            try writer.print("n{d} -> n{d}\n", .{
+                n.node.id,
+                (self.nextNode.get(n.node) orelse .{}).id,
+            });
+
+            if (self.choices.contains(n.node)) {
+                const list = self.choices.get(n.node).?;
+                try writer.print("n{d} -- {{", .{n.node.id});
+                for (list.items) |choice| {
+                    try writer.print("n{d} ", .{choice.id});
+                }
+                try writer.print("}}\n", .{n.node.id});
+            }
+        }
+        try writer.print("}}\n", .{});
+    }
+
+    pub fn deinit(self: *@This()) void {
         self.conditionalBlock.deinit();
         {
             var i: usize = 0;
-            while (i < self.textContent.items.len) {
-                self.textContent.items[i].deinit();
+            while (i < self.nodes.items.len) {
+                switch (self.nodes.items[i].content) {
+                    .textContent => |textContent| {
+                        textContent.deinit();
+                    },
+                }
                 i += 1;
             }
-            self.textContent.deinit();
+            self.nodes.deinit();
         }
 
         {
@@ -192,32 +218,37 @@ pub const StoryNodes = struct {
 
         self.nextNode.deinit();
         self.tags.deinit();
+        self.nodes.deinit(self.allocator);
     }
 
-    pub fn newNodeWithContent(self: *Self, content: []const u8, alloc: std.mem.Allocator) !Node {
+    pub fn newNodeWithContent(self: *@This(), content: []const u8, alloc: std.mem.Allocator) !Node {
         var newString = try NodeString.fromUtf8(content, alloc);
-        try self.textContent.append(newString);
-        var node = Node{
-            .id = self.textContent.items.len - 1,
-            .generation = 0, // todo..
-        };
-        try self.instances.append(node);
-        try self.passThrough.append(false);
+        var id = self.nodes.items.len - 1;
 
-        if (node.id == 1) {
-            try self.setLabel(node, storyStartLabel);
+        var nodeData: NodeData = .{
+            .node = .{
+                .id = id,
+                .generation = 0, // todo..
+            },
+            .textContent = newString,
+            .passThrough = false,
+        };
+
+        if (nodeData.node.id == 1) {
+            try self.setLabel(nodeData.node, storyStartLabel);
         }
-        return node;
+        return nodeData.node;
     }
 
     // this function calls the directive compiler.
-    fn newDirectiveNodeFromUtf8(self: *Self, source: []const []const u8, alloc: std.mem.Allocator) !Node {
+    fn newDirectiveNodeFromUtf8(self: *@This(), source: []const []const u8, alloc: std.mem.Allocator) !Node {
         for (source) |src| {
             ParserPrint("tokens: {s},\n", .{src});
         }
         // you have access to start and end window here.
         var newString = try NodeString.fromUtf8(source[0], alloc);
         var node = Node{ .id = self.instances.items.len, .generation = 0 };
+
         try self.textContent.append(newString);
         try self.instances.append(node);
         try self.passThrough.append(false);
@@ -225,20 +256,20 @@ pub const StoryNodes = struct {
         return node;
     }
 
-    pub fn setTextContentFromSlice(self: *Self, node: Node, newContent: []const u8) !void {
+    pub fn setTextContentFromSlice(self: *@This(), node: Node, newContent: []const u8) !void {
         if (node.id >= self.textContent.items.len) return StoryNodesError.InstancesNotExistError;
         self.textContent.items[node.id].string.clearAndFree();
         try self.textContent.items[node.id].string.appendSlice(newContent);
     }
 
-    pub fn setLabel(self: *Self, id: Node, label: []const u8) !void {
+    pub fn setLabel(self: *@This(), id: Node, label: []const u8) !void {
         if (self.tags.contains(label)) {
             return ParserWarning.DuplicateLabelWarning;
         }
         try self.tags.put(label, id);
     }
 
-    pub fn findNodeByLabel(self: Self, label: []const u8) ?Node {
+    pub fn findNodeByLabel(self: @This(), label: []const u8) ?Node {
         if (self.tags.contains(label)) {
             return self.tags.getEntry(label).?.value_ptr.*;
         } else {
@@ -247,22 +278,23 @@ pub const StoryNodes = struct {
         }
     }
 
-    pub fn setLinkByLabel(self: *Self, id: Node, label: []const u8) !Node {
-        var next = self.findNodeByLabel(label) orelse return StoryNodesError.InstancesNotExistError;
-        try self.nextNode.put(id, next);
-        try self.explicitLink.put(id, void{});
-        return next;
+    pub fn setLinkByLabel(self: *@This(), id: Node, label: []const u8) !void {
+        if (self.findNodeByLabel(label)) |next| {
+            try self.nextNode.put(id, next);
+            try self.hasExplicitLink.put(id, void{});
+            return next;
+        }
     }
 
-    pub fn setLink(self: *Self, from: Node, to: Node) !void {
+    pub fn setLink(self: *@This(), from: Node, to: Node) !void {
         try self.nextNode.put(from, to);
     }
 
-    pub fn setEnd(self: *Self, node: Node) !void {
+    pub fn setEnd(self: *@This(), node: Node) !void {
         try self.setLink(node, try self.getNodeFromExplicitId(0));
     }
 
-    pub fn getNodeFromExplicitId(self: Self, id: anytype) StoryNodesError!Node {
+    pub fn getNodeFromExplicitId(self: @This(), id: anytype) StoryNodesError!Node {
         if (id < self.instances.items.len) {
             return self.instances.items[id];
         } else {
@@ -270,13 +302,13 @@ pub const StoryNodes = struct {
         }
     }
 
-    pub fn addChoicesBySlice(self: *Self, node: Node, choices: []const Node, alloc: std.mem.Allocator) !void {
+    pub fn addChoicesBySlice(self: *@This(), node: Node, choices: []const Node, alloc: std.mem.Allocator) !void {
         var value = try self.choices.getOrPut(node);
         value.value_ptr.* = try ArrayList(Node).initCapacity(alloc, choices.len);
         try value.value_ptr.appendSlice(choices);
     }
 
-    pub fn addChoiceByNode(self: *Self, node: Node, choice: Node, alloc: std.mem.Allocator) !void {
+    pub fn addChoiceByNode(self: *@This(), node: Node, choice: Node, alloc: std.mem.Allocator) !void {
         if (!self.choices.contains(node)) {
             var value = try self.choices.getOrPut(node);
             value.value_ptr.* = ArrayList(Node).init(alloc);
@@ -287,15 +319,15 @@ pub const StoryNodes = struct {
         }
     }
 
-    pub fn addSpeaker(self: *Self, node: Node, speaker: NodeString) !void {
+    pub fn addSpeaker(self: *@This(), node: Node, speaker: NodeString) !void {
         try self.speakerName.put(node, speaker);
     }
 
-    pub fn getStoryText(self: Self, id: usize) ![]const u8 {
+    pub fn getStoryText(self: @This(), id: usize) ![]const u8 {
         return self.textContent.items[id].asUtf8Native();
     }
 
-    pub fn getSpeakerName(self: Self, id: usize) ![]const u8 {
+    pub fn getSpeakerName(self: @This(), id: usize) ![]const u8 {
         return self.speakerName.items[id].asUtf8Native();
     }
 };
@@ -310,13 +342,11 @@ pub const Interactor = struct {
     isRecording: bool,
     history: ArrayList(Node),
 
-    const Self = @This();
-
-    pub fn startRecording(self: *Self) void {
+    pub fn startRecording(self: *@This()) void {
         self.isRecording = true;
     }
 
-    pub fn showHistory(self: Self) void {
+    pub fn showHistory(self: @This()) void {
         for (self.history.items) |i| {
             std.debug.print("{d} ", .{i.id});
         }
@@ -332,25 +362,25 @@ pub const Interactor = struct {
         };
     }
 
-    pub fn deinit(self: *Self) void {
+    pub fn deinit(self: *@This()) void {
         self.history.deinit();
     }
 
-    pub fn displayCurrentContent(self: Self) void {
+    pub fn displayCurrentContent(self: @This()) void {
         const str = if (self.story.speakerName.get(self.node)) |speaker| speaker.asUtf8Native() else "narrator";
         std.debug.print("{d}> {!s}: {!s}\n", .{ self.node.id, str, self.story.textContent.items[self.node.id].asUtf8Native() });
     }
 
-    pub fn getCurrentStoryText(self: Self) []const u8 {
+    pub fn getCurrentStoryText(self: @This()) []const u8 {
         return try self.story.textContent.items[self.node.id].asUtf8Native();
     }
 
-    pub fn getCurrentSpeaker(self: Self) []const u8 {
+    pub fn getCurrentSpeaker(self: @This()) []const u8 {
         const str = if (self.story.speakerName.get(self.node)) |speaker| try speaker.asUtf8Native() else "narrator";
         return str;
     }
 
-    pub fn next(self: *Self) !void {
+    pub fn next(self: *@This()) !void {
         var story = self.story;
         if (story.nextNode.contains(self.node)) {
             self.node = story.nextNode.get(self.node).?;
@@ -361,7 +391,7 @@ pub const Interactor = struct {
         }
     }
 
-    pub fn iterateChoicesList(self: *Self, iter: []const usize) !void {
+    pub fn iterateChoicesList(self: *@This(), iter: []const usize) !void {
         var currentChoiceIndex: usize = 0;
         var story = self.story;
 
@@ -636,8 +666,6 @@ pub const ParserWarningOrErrorInfo = struct {
 };
 
 pub const NodeParser = struct {
-    const Self = @This();
-
     tokenizer: Tokens,
     isParsing: bool = true,
     tabLevel: usize = 0,
@@ -654,7 +682,7 @@ pub const NodeParser = struct {
     warnings: ArrayList(ParserWarningOrErrorInfo),
     filename: []const u8 = "__halcyon_no_file",
 
-    pub fn pushError(self: *Self, errorType: ParserWarningOrError, comptime fmt: []const u8, args: anytype) !void {
+    pub fn pushError(self: *@This(), errorType: ParserWarningOrError, comptime fmt: []const u8, args: anytype) !void {
         try self.errors.append(.{
             .errorUnion = errorType,
             .tokenWindow = self.currentTokenWindow,
@@ -666,7 +694,7 @@ pub const NodeParser = struct {
         self.currentTokenWindow.startIndex = self.currentTokenWindow.endIndex;
     }
 
-    pub fn pushWarning(self: *Self, errorType: ParserWarningOrError, comptime fmt: []const u8, args: anytype) !void {
+    pub fn pushWarning(self: *@This(), errorType: ParserWarningOrError, comptime fmt: []const u8, args: anytype) !void {
         _ = args;
         _ = fmt;
         try self.warnings.append(.{
@@ -677,7 +705,7 @@ pub const NodeParser = struct {
         });
     }
 
-    fn makeLinkingRules(self: *Self, node: Node) NodeLinkingRules {
+    fn makeLinkingRules(self: *@This(), node: Node) NodeLinkingRules {
         return NodeLinkingRules{
             .node = node,
             .tabLevel = self.tabLevel,
@@ -685,7 +713,7 @@ pub const NodeParser = struct {
         };
     }
 
-    fn addCurrentDialogueChoiceFromUtf8Content(self: *Self, choiceContent: []const u8, alloc: std.mem.Allocator) !void {
+    fn addCurrentDialogueChoiceFromUtf8Content(self: *@This(), choiceContent: []const u8, alloc: std.mem.Allocator) !void {
         var node = try self.story.newNodeWithContent(choiceContent, alloc);
         var rules = self.makeLinkingRules(node);
         rules.typeInfo = .{ .choice = .{} };
@@ -724,7 +752,7 @@ pub const NodeParser = struct {
         return false;
     }
 
-    fn finishCreatingNode(self: *Self, node: Node, params: NodeLinkingRules) !void {
+    fn finishCreatingNode(self: *@This(), node: Node, params: NodeLinkingRules) !void {
         self.lastNode = node;
 
         try self.nodeLinkingRules.append(params);
@@ -736,7 +764,7 @@ pub const NodeParser = struct {
         }
     }
 
-    fn deinit(self: *Self) void {
+    fn deinit(self: *@This()) void {
         // we dont release the storyNodes
         self.tokenizer.deinit();
         self.nodeLinkingRules.deinit();
@@ -744,8 +772,8 @@ pub const NodeParser = struct {
         self.warnings.deinit();
     }
 
-    pub fn MakeParser(source: []const u8, alloc: std.mem.Allocator) !Self {
-        var rv = Self{
+    pub fn MakeParser(source: []const u8, alloc: std.mem.Allocator) !@This() {
+        var rv = @This(){
             .tokenizer = try Tokenizer.MakeTokens(source, alloc, .{ .debug = false }),
             .story = StoryNodes.init(alloc),
             .nodeLinkingRules = ArrayList(NodeLinkingRules).init(alloc),
@@ -786,7 +814,7 @@ pub const NodeParser = struct {
         }
     };
 
-    pub fn LinkNodes(self: *Self, alloc: std.mem.Allocator) !void {
+    pub fn LinkNodes(self: *@This(), alloc: std.mem.Allocator) !void {
         assert(self.nodeLinkingRules.items.len == self.story.instances.items.len);
 
         // first pass, link all linear nodes and choices
@@ -794,7 +822,6 @@ pub const NodeParser = struct {
             var i: usize = 0;
             while (i < self.nodeLinkingRules.items.len) {
                 const rule = self.nodeLinkingRules.items[i];
-                // rule.displayPretty();
                 switch (rule.typeInfo) {
                     .linear => |info| {
                         if (!self.story.nextNode.contains(info.lastNode)) {
@@ -806,7 +833,7 @@ pub const NodeParser = struct {
 
                 if (rule.label) |label| {
                     std.debug.print("goto from {any} -> {s}\n", .{ rule.node, label });
-                    _ = self.story.setLinkByLabel(rule.node, label) catch {};
+                    try self.story.setLinkByLabel(rule.node, label);
                 } else if (rule.explicit_goto) |goto| {
                     _ = try self.story.setLink(rule.node, goto);
                 }
@@ -936,7 +963,7 @@ pub const NodeParser = struct {
     }
 
     pub fn DoParse(source: []const u8, alloc: std.mem.Allocator) !StoryNodes {
-        var self = try Self.MakeParser(source, alloc);
+        var self = try @This().MakeParser(source, alloc);
         defer self.deinit();
 
         const tokenTypes = self.tokenizer.token_types;
@@ -1191,7 +1218,7 @@ fn makeSimpleTestStory(alloc: std.mem.Allocator) !StoryNodes {
         try story.setLink(choiceNodes[1], node);
 
         node = try story.newNodeWithContent("Don't be stupid you can't pick both!", alloc);
-        _ = try story.setLinkByLabel(node, "hello");
+        try story.setLinkByLabel(node, "hello");
         try story.setLink(choiceNodes[2], node);
     }
     return story;
@@ -1320,5 +1347,7 @@ test "vm if statements" {
 
     var story = try NodeParser.DoParse(tokenizer.sampleData, std.testing.allocator);
     defer story.deinit();
-    std.debug.print("\n", .{});
+    var graphviz = try story.dumpGraphviz();
+    defer graphviz.deinit();
+    std.debug.print("{s}\n", .{graphviz.items});
 }
